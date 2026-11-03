@@ -22,6 +22,7 @@ final class SliceView extends JComponent
     private static final int MARGIN = 16;
     private static final Color BACKGROUND = new Color(0x15171B);
     private static final Color TEXT = new Color(150, 156, 168);
+    private static final Color BLACK_FRAME_BORDER = new Color(0xC03030);
 
     private transient BufferedImage image;
     private String caption = "";
@@ -73,6 +74,23 @@ final class SliceView extends JComponent
         g.setColor(BACKGROUND);
         g.fillRect(0, 0, getWidth(), getHeight());
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        if (image == null && !caption.isEmpty())
+        {
+            // A bad plane or row: the video gets a black frame here, so show one, with the reason.
+            int side = Math.max(16, Math.min(getWidth() - 2 * MARGIN, getHeight() - 2 * MARGIN - 18));
+            int x = (getWidth() - side) / 2;
+            int y = (getHeight() - 18 - side) / 2;
+            g.setColor(Color.BLACK);
+            g.fillRect(x, y, side, side);
+            g.setColor(BLACK_FRAME_BORDER);
+            g.drawRect(x - 1, y - 1, side + 1, side + 1);
+            g.setColor(TEXT);
+            String label = "black frame";
+            g.drawString(label, (getWidth() - g.getFontMetrics().stringWidth(label)) / 2, y + side / 2);
+            g.drawString(caption, 8, getHeight() - 8);
+            g.dispose();
+            return;
+        }
         if (image == null)
         {
             g.setColor(TEXT);

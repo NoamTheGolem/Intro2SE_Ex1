@@ -93,6 +93,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private static final String[] TRIANGLE_NAMES = {"a", "b", "c"};
     private static final String[] TRAPEZOID_NAMES = {"a1", "a2", "b", "c"};
     private static final int CONTROL_WIDTH = 430;
+    /** Wrap width of HTML labels in CSS px: Swing draws one CSS px as 1.3 screen pixels. */
+    private static final int HTML_WIDTH = (CONTROL_WIDTH - 80) * 10 / 13;
+    private static final int INFO_HEIGHT = 44;
 
     /** One entry of the use-case list: a plane (null = black frame) and where it came from. */
     static final class Keyframe
@@ -526,8 +529,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         g.fill = GridBagConstraints.HORIZONTAL;
         pointsInfo.setFont(pointsInfo.getFont().deriveFont(Font.PLAIN, 11f));
         // Fixed size: a long message must wrap, not widen the panel (which would squeeze the fields).
-        pointsInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, 30));
-        pointsInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, 30));
+        pointsInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
+        pointsInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
         pointsInfo.setVerticalAlignment(JLabel.TOP);
         p.add(pointsInfo, g);
         showPointRows();
@@ -1588,6 +1591,16 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         else
         {
+            // No plane to draw: show what the video gets (a black frame) and why; the editor keeps
+            // the last plane, so "Add current" and the sliders still work from there.
+            List<Vec3> none = new ArrayList<Vec3>();
+            List<String> noNames = new ArrayList<String>();
+            cutView.setImage(null, 0, 0, k.origin + ": a black frame in the video - " + k.note.replace(" -> black frame", ""));
+            view3d.setPlane(null, none, noNames);
+            for (int v = 0; v < 3; v++)
+            {
+                orthos[v].view().setPlane(null, none, noNames);
+            }
             status.setText(k.origin + " is a black frame: " + k.note);
         }
     }
@@ -1937,7 +1950,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private static String html(String text, String colour)
     {
         String safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        String style = "width:" + (CONTROL_WIDTH - 80) + "px";
+        String style = "width:" + HTML_WIDTH + "px";
         if (colour != null)
         {
             style += ";color:" + colour;
