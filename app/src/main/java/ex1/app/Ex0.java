@@ -36,7 +36,7 @@ public final class Ex0
 
     private static final String USAGE =
             "Usage: java -jar Ex0.jar <file.nrrd> <file.csv> <file.mp4> [options]\n"
-            + "       java -jar Ex0.jar [file.nrrd]   (opens the window app)\n"
+            + "       java -jar Ex0.jar [file.nrrd [file.csv]]   (opens the app: cut the model interactively)\n"
             + "Options:\n"
             + "  --interp nearest|trilinear   sampling (default nearest)\n"
             + "  --fps N                      video frame rate (default 10)\n"
@@ -83,14 +83,14 @@ public final class Ex0
     // ===================================================================== ENTRY
 
     /**
-     * No arguments, or one .nrrd file (e.g. dropped on the launcher): open the window app.
-     * Otherwise: command-line demo.
+     * No arguments, one file (a volume) or two files (volume + CSV of planes): open the app.
+     * Three files: the command-line demo of the assignment (volume, CSV, output video).
      *
      * @param (String[]) args nrrd, csv, mp4, then options
      */
     public static void main(String[] args)
     {
-        if (args.length == 0 || (args.length == 1 && !args[0].startsWith("--")))
+        if (opensTheApp(args))
         {
             if (java.awt.GraphicsEnvironment.isHeadless())
             {
@@ -98,12 +98,17 @@ public final class Ex0
                 System.err.print(USAGE);
                 System.exit(EXIT_USAGE);
             }
-            File initial = null;
-            if (args.length == 1)
+            File volume = null;
+            File csv = null;
+            if (args.length >= 1)
             {
-                initial = new File(args[0]);
+                volume = new File(args[0]);
             }
-            ViewerApp.launch(initial);
+            if (args.length == 2)
+            {
+                csv = new File(args[1]);
+            }
+            StudioApp.launch(volume, csv);
             return;
         }
         int code = EXIT_OK;
@@ -142,6 +147,26 @@ public final class Ex0
         System.out.println("Frames  : " + renderer.width() + "x" + renderer.height() + " @ " + opt.fps + " fps, "
                 + opt.interp.name().toLowerCase(Locale.ROOT) + ", " + opt.threads + " thread(s)");
         renderVideo(renderer, opt);
+    }
+
+    /**
+     * @param (String[]) args command-line arguments
+     * @return true when the arguments ask for the window app rather than the batch demo
+     */
+    private static boolean opensTheApp(String[] args)
+    {
+        if (args.length > 2)
+        {
+            return false;
+        }
+        for (int i = 0; i < args.length; i++)
+        {
+            if (args[i].startsWith("--"))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ============================================================ BUILD PIPELINE

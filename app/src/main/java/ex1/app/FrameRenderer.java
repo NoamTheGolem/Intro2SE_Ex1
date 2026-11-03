@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * Turns plane number i into one 8-bit grey frame. Shared by the command-line demo (Ex0) and
- * the window app (ViewerApp), so both produce identical frames.
+ * the app (StudioApp: preview and export), so both produce identical frames.
  *
  * All frames have one size: the largest plane, rounded up to even (decision D8); each plane is
  * centred on black. A null plane (a CSV row that cannot be projected) gives an all-black frame,

@@ -109,7 +109,7 @@ public final class ParallelProjector extends Projector
     }
 
     /**
-     * Stops the worker threads. Optional: they are daemons, but a long-running app (the viewer)
+     * Stops the worker threads. Optional: they are daemons, but a long-running app (StudioApp)
      * should release them when it swaps projectors.
      */
     public void shutdown()
