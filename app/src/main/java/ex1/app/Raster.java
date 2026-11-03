@@ -122,6 +122,22 @@ final class Raster
     }
 
     /**
+     * @return the ARGB pixels (shared with the image), for renderers that fill them directly
+     */
+    int[] pixels()
+    {
+        return pixels;
+    }
+
+    /**
+     * @return the depth buffer (smaller = nearer), shared
+     */
+    float[] depths()
+    {
+        return depth;
+    }
+
+    /**
      * @return the rendered image (shared buffer)
      */
     BufferedImage image()

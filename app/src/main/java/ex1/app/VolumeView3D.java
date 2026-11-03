@@ -1,80 +1,113 @@
 package ex1.app;
 
-import ex1.core.Image2D;
 import ex1.core.IntensityWindow;
 import ex1.core.Plane;
-import ex1.core.Projector;
 import ex1.core.Vec3;
 import ex1.core.Volume;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.JComponent;
+import javax.swing.Timer;
 
 /**
- * The 3-D view: the volume's bounding box, its three mid-slices (the "model", as 3D Slicer shows
- * it) and the cutting plane with the live cross-section mapped onto it. Software rendered with
- * {@link Raster}; drag to orbit, wheel to slice through the model, Ctrl+wheel to zoom,
- * double-click to reset the camera.
+ * The 3-D view: the scanned object as a solid, cut open by the plane so its inside shows on the
+ * cut face (like a pie cut in the middle), with the volume's box, the outline of the triangle /
+ * trapezoid and its points. Software rendered ({@link CutawayRenderer} into a {@link Raster}):
+ * drag to orbit, wheel to move the plane through the object, Ctrl+wheel to zoom, double-click to
+ * reset the camera, click to place a point while picking. While something moves the view renders
+ * at half resolution and sharpens itself a moment later.
  */
 final class VolumeView3D extends JComponent
 {
-    /** Receives gestures that change the plane (the app owns the plane). */
+    /** Receives gestures that change the plane or place points (the app owns the plane). */
     interface Host
     {
         /**
          * @param (double) distance voxels to move the plane along its normal
          */
         void slidePlane(double distance);
+
+        /**
+         * @param (Vec3) index the clicked point of the object, in voxel indices
+         */
+        void modelClicked(Vec3 index);
     }
 
     private static final long serialVersionUID = 1L;
     private static final int BACKGROUND = 0xFF15171B;
-    private static final int BOX_COLOUR = 0xFF8A93A6;
+    private static final int BOX_COLOUR = 0xFF6F7890;
     private static final int PLANE_COLOUR = 0xFFFF9F1C;
-    private static final int PLANE_TINT = 0xFF9F1C;
-    private static final double PLANE_TINT_AMOUNT = 0.28;
-    private static final double SLICE_ALPHA = 1.0;
+    private static final int PLANE_HIDDEN = 0xFF7A4E12;
     private static final double ORBIT_DEGREES_PER_PIXEL = 0.4;
     private static final double SLIDE_VOXELS_PER_TICK = 2.0;
-    private static final int STRIPS = 110;
+    private static final int SHARPEN_DELAY_MS = 160;
+    private static final int CLICK_SLOP = 3;
 
     private final transient Camera3D camera = new Camera3D();
     private final transient Host host;
+    private final transient CutawayRenderer renderer;
     private transient Raster raster;
     private transient Volume volume;
-    private transient Raster.Texture[] sliceTextures;
-    private transient Plane[] slicePlanes;
+    private transient IntensityWindow window;
+    private transient VolumeGeometry geometry;
+    private transient SolidModel model;
     private transient Plane plane;
-    private transient Raster.Texture planeTexture;
-    private boolean showSlices = true;
-    private boolean showPlane = true;
+    private transient List<Vec3> points = new ArrayList<Vec3>();
+    private transient List<String> pointNames = new ArrayList<String>();
+    private transient String message;
+    private final transient Timer sharpen;
+    private boolean cutOpen = true;
+    private boolean picking;
+    private boolean coarse;
+    private boolean fitted;
+    private int pressX;
+    private int pressY;
     private int lastX;
     private int lastY;
-    private boolean fitted;
+    private long lastRenderNanos;
 
     /**
-     * @param (Host) host receives plane gestures
+     * @param (Host) host receives plane gestures and clicks
+     * @param (int) threads rendering threads
      */
-    VolumeView3D(Host host)
+    VolumeView3D(Host host, int threads)
     {
         this.host = host;
+        this.renderer = new CutawayRenderer(threads);
         setOpaque(true);
         setBackground(new Color(BACKGROUND));
         setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        sharpen = new Timer(SHARPEN_DELAY_MS, new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                coarse = false;
+                repaint();
+            }
+        });
+        sharpen.setRepeats(false);
         MouseAdapter mouse = new MouseAdapter()
         {
             @Override
             public void mousePressed(MouseEvent e)
             {
+                pressX = e.getX();
+                pressY = e.getY();
                 lastX = e.getX();
                 lastY = e.getY();
             }
@@ -82,99 +115,191 @@ final class VolumeView3D extends JComponent
             @Override
             public void mouseDragged(MouseEvent e)
             {
-                camera.orbit((e.getX() - lastX) * ORBIT_DEGREES_PER_PIXEL, (e.getY() - lastY) * ORBIT_DEGREES_PER_PIXEL);
+                camera.orbit((e.getX() - lastX) * ORBIT_DEGREES_PER_PIXEL, -(e.getY() - lastY) * ORBIT_DEGREES_PER_PIXEL);
                 lastX = e.getX();
                 lastY = e.getY();
-                repaint();
+                moving();
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e)
+            {
+                boolean click = Math.abs(e.getX() - pressX) <= CLICK_SLOP && Math.abs(e.getY() - pressY) <= CLICK_SLOP;
+                if (click && e.getClickCount() == 1 && model != null && VolumeView3D.this.host != null)
+                {
+                    Vec3 p = renderer.pick(e.getX(), e.getY(), getWidth(), getHeight(), camera, geometry, model, plane, cutOpen);
+                    if (p != null)
+                    {
+                        VolumeView3D.this.host.modelClicked(p);
+                    }
+                }
             }
 
             @Override
             public void mouseClicked(MouseEvent e)
             {
-                if (e.getClickCount() == 2)
+                if (e.getClickCount() == 2 && !picking)
                 {
-                    camera.setAngles(-35, 25);
+                    camera.setAngles(Camera3D.DEFAULT_YAW, Camera3D.DEFAULT_PITCH);
                     fitted = false;
                     repaint();
                 }
             }
-        };
-        addMouseListener(mouse);
-        addMouseMotionListener(mouse);
-        addMouseWheelListener(new MouseWheelListener()
-        {
+
             @Override
             public void mouseWheelMoved(MouseWheelEvent e)
             {
                 if (e.isControlDown())
                 {
-                    camera.zoomBy(e.getWheelRotation() < 0 ? 1.15 : 1 / 1.15);
-                    repaint();
+                    double factor = 1.15;
+                    if (e.getWheelRotation() > 0)
+                    {
+                        factor = 1 / 1.15;
+                    }
+                    camera.zoomBy(factor);
+                    moving();
                 }
                 else if (VolumeView3D.this.host != null)
                 {
                     VolumeView3D.this.host.slidePlane(-e.getWheelRotation() * SLIDE_VOXELS_PER_TICK);
                 }
             }
-        });
+        };
+        addMouseListener(mouse);
+        addMouseMotionListener(mouse);
+        addMouseWheelListener(mouse);
     }
 
     // ------------------------------------------------------------------ data in
 
     /**
-     * Sets the model: computes the three mid-slice textures once.
-     *
      * @param (Volume) v volume (null clears the view)
-     * @param (IntensityWindow) window grey mapping
+     * @param (IntensityWindow) w grey mapping
+     * @param (VolumeGeometry) g geometry
      */
-    void setVolume(Volume v, IntensityWindow window)
+    void setVolume(Volume v, IntensityWindow w, VolumeGeometry g)
     {
         volume = v;
-        sliceTextures = null;
-        slicePlanes = null;
+        window = w;
+        geometry = g;
+        model = null;
         fitted = false;
+        message = null;
         if (v != null)
         {
-            camera.setCentre(new Vec3((v.sizeX() - 1) / 2.0, (v.sizeY() - 1) / 2.0, (v.sizeZ() - 1) / 2.0));
-            Projector projector = Projector.create(Projector.Interpolation.NEAREST);
-            slicePlanes = new Plane[] {PlaneSpec.xy(v).toPlane(), PlaneSpec.xz(v).toPlane(), PlaneSpec.yz(v).toPlane()};
-            sliceTextures = new Raster.Texture[slicePlanes.length];
-            for (int i = 0; i < slicePlanes.length; i++)
-            {
-                Image2D img = projector.project(v, slicePlanes[i]);
-                byte[] grey = new byte[img.width() * img.height()];
-                window.toGrey(img, grey, img.width(), img.height(), img.width(), img.height());
-                sliceTextures[i] = Raster.Texture.fromGrey(grey, img.width(), img.height(), 0, 0.0);
-            }
+            camera.setCentre(new Vec3(0, 0, 0));
+            camera.setAngles(Camera3D.DEFAULT_YAW, Camera3D.DEFAULT_PITCH);
+            message = "building the 3-D model ...";
         }
         repaint();
     }
 
     /**
-     * Sets the cutting plane and its already-computed cross-section.
-     *
-     * @param (Plane) p plane (null hides it)
-     * @param (byte[]) grey cross-section, plane.imageWidth() x plane.imageHeight() grey bytes
+     * @param (SolidModel) m the solid, once built (null while building)
      */
-    void setPlane(Plane p, byte[] grey)
+    void setModel(SolidModel m)
+    {
+        model = m;
+        message = null;
+        if (m != null && m.solidCount() == 0)
+        {
+            message = "nothing above the surface threshold - lower it";
+        }
+        repaint();
+    }
+
+    /**
+     * @return the solid model shown, or null
+     */
+    SolidModel model()
+    {
+        return model;
+    }
+
+    /**
+     * @param (Plane) p cutting plane (null hides it)
+     * @param (List) pts points to mark
+     * @param (List) names their labels
+     */
+    void setPlane(Plane p, List<Vec3> pts, List<String> names)
     {
         plane = p;
-        planeTexture = null;
-        if (p != null && grey != null)
+        points = new ArrayList<Vec3>(pts);
+        pointNames = new ArrayList<String>(names);
+        moving();
+    }
+
+    /**
+     * Turns the camera to look into the cut: from the side of the plane it already faces, a
+     * little from the side and from above.
+     *
+     * @param (Plane) p the plane to look at
+     */
+    void lookAtPlane(Plane p)
+    {
+        if (geometry == null || p == null || !p.isRenderable())
         {
-            planeTexture = Raster.Texture.fromGrey(grey, p.imageWidth(), p.imageHeight(), PLANE_TINT, PLANE_TINT_AMOUNT);
+            return;
+        }
+        Vec3 n = geometry.gradientToWorld(OrthoView.normalOf(p));
+        if (n.length() < 1e-9)
+        {
+            return;
+        }
+        n = n.normalized();
+        if (n.dot(camera.towardsViewer()) < 0)
+        {
+            n = n.scale(-1);
+        }
+        camera.lookFrom(n, 28, 14);
+        moving();
+    }
+
+    /**
+     * @param (boolean) on cut the object open along the plane
+     */
+    void setCutOpen(boolean on)
+    {
+        cutOpen = on;
+        repaint();
+    }
+
+    /**
+     * @param (boolean) on true while the user is placing points
+     */
+    void setPicking(boolean on)
+    {
+        picking = on;
+        if (on)
+        {
+            setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+        }
+        else
+        {
+            setCursor(Cursor.getDefaultCursor());
         }
         repaint();
     }
 
     /**
-     * @param (boolean) slices show the three mid-slices
-     * @param (boolean) cut show the cutting plane
+     * @return milliseconds the last full repaint of the model took
      */
-    void setLayers(boolean slices, boolean cut)
+    double lastRenderMillis()
     {
-        showSlices = slices;
-        showPlane = cut;
+        return lastRenderNanos / 1e6;
+    }
+
+    /** Stops the rendering threads. */
+    void dispose()
+    {
+        renderer.shutdown();
+    }
+
+    /** Something changed: draw coarse now, sharp in a moment. */
+    private void moving()
+    {
+        coarse = true;
+        sharpen.restart();
         repaint();
     }
 
@@ -192,107 +317,64 @@ final class VolumeView3D extends JComponent
             fitted = false;
         }
         raster.clear(BACKGROUND);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         if (volume == null)
         {
             g.drawImage(raster.image(), 0, 0, null);
             g.setColor(new Color(150, 156, 168));
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            String hint = "3-D view: open a volume";
+            String hint = "3-D model: open a volume (Open NRRD..., or drop a .nrrd file here)";
             g.drawString(hint, (w - g.getFontMetrics().stringWidth(hint)) / 2, h / 2);
             return;
         }
         if (!fitted)
         {
-            double diag = Math.sqrt((double) volume.sizeX() * volume.sizeX() + (double) volume.sizeY() * volume.sizeY()
-                    + (double) volume.sizeZ() * volume.sizeZ());
-            camera.fit(diag, w, h);
+            camera.fit(geometry.worldDiagonal() * 0.85, w, h);
             fitted = true;
         }
-        if (showSlices && sliceTextures != null)
+        if (model != null)
         {
-            for (int i = 0; i < slicePlanes.length; i++)
+            long t0 = System.nanoTime();
+            int scale = 1;
+            if (coarse)
             {
-                drawRectangle(slicePlanes[i], sliceTextures[i], SLICE_ALPHA);
+                scale = 2;
+            }
+            renderer.render(raster, camera, geometry, model, volume, window, plane, cutOpen, scale);
+            if (!coarse)
+            {
+                lastRenderNanos = System.nanoTime() - t0;
             }
         }
-        if (showPlane && plane != null && planeTexture != null)
-        {
-            drawCuttingPlane();
-        }
         drawBox();
+        drawPlaneOutline();
         g.drawImage(raster.image(), 0, 0, null);
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        drawLabels(g);
-    }
-
-    /**
-     * Draws an axis-aligned rectangle plane (a1,a2,b,c) as two textured triangles.
-     *
-     * @param (Plane) p rectangle
-     * @param (Raster.Texture) tex its cross-section
-     * @param (double) alpha opacity
-     */
-    private void drawRectangle(Plane p, Raster.Texture tex, double alpha)
-    {
-        int w = getWidth();
-        int h = getHeight();
-        Raster.Vertex a1 = camera.project(p.a1(), w, h, 0, 0);
-        Raster.Vertex a2 = camera.project(p.a2(), w, h, tex.width - 0.01, 0);
-        Raster.Vertex b = camera.project(p.b(), w, h, 0, tex.height - 0.01);
-        Raster.Vertex c = camera.project(p.c(), w, h, tex.width - 0.01, tex.height - 0.01);
-        raster.triangle(a1, a2, c, tex, alpha);
-        raster.triangle(a1, c, b, tex, alpha);
-    }
-
-    /**
-     * Draws the cutting plane as thin horizontal strips, each mapped to its own rows of the
-     * cross-section image (exactly the rows the projector computed), then the outline and rails.
-     */
-    private void drawCuttingPlane()
-    {
-        int w = getWidth();
-        int h = getHeight();
-        int imgW = plane.imageWidth();
-        int imgH = plane.imageHeight();
-        Vec3 a1 = plane.a1();
-        Vec3 a2 = plane.a2();
-        Vec3 v1 = plane.b().sub(a1).normalized();
-        Vec3 v2 = plane.c().sub(a2).normalized();
-        double step = Math.max(1.0, (imgH - 1) / (double) STRIPS);
-        double y0 = 0;
-        while (y0 < imgH - 1)
+        drawPoints(g);
+        drawAxes(g, w, h);
+        g.setFont(getFont());
+        g.setColor(new Color(150, 156, 168));
+        String hint = "drag: rotate   wheel: move the plane   ctrl+wheel: zoom   double-click: reset";
+        if (picking)
         {
-            double y1 = Math.min(imgH - 1, y0 + step);
-            Vec3 l0 = a1.add(v1.scale(y0));
-            Vec3 r0 = a2.add(v2.scale(y0));
-            Vec3 l1 = a1.add(v1.scale(y1));
-            Vec3 r1 = a2.add(v2.scale(y1));
-            int n0 = Math.min(imgW, (int) Math.floor(r0.dist(l0)) + 1);
-            int n1 = Math.min(imgW, (int) Math.floor(r1.dist(l1)) + 1);
-            double x00 = (imgW - n0) / 2;
-            double x10 = (imgW - n1) / 2;
-            Raster.Vertex vl0 = camera.project(l0, w, h, x00, y0);
-            Raster.Vertex vr0 = camera.project(r0, w, h, x00 + n0 - 0.01, y0);
-            Raster.Vertex vl1 = camera.project(l1, w, h, x10, y1);
-            Raster.Vertex vr1 = camera.project(r1, w, h, x10 + n1 - 0.01, y1);
-            raster.triangle(vl0, vr0, vr1, planeTexture, 1.0);
-            raster.triangle(vl0, vr1, vl1, planeTexture, 1.0);
-            y0 = y1;
+            hint = "click on the object (surface or cut face) to place the point";
+            g.setColor(new Color(0xFF9F1C));
         }
-        Raster.Vertex pa1 = camera.project(a1, w, h, 0, 0);
-        Raster.Vertex pa2 = camera.project(a2, w, h, 0, 0);
-        Raster.Vertex pb = camera.project(plane.b(), w, h, 0, 0);
-        Raster.Vertex pc = camera.project(plane.c(), w, h, 0, 0);
-        raster.line(pa1, pb, PLANE_COLOUR, 2, true);
-        raster.line(pa2, pc, PLANE_COLOUR, 2, true);
-        raster.line(pb, pc, PLANE_COLOUR, 2, true);
-        if (!plane.isTriangle())
+        g.drawString(hint, 8, h - 8);
+        if (message != null)
         {
-            raster.line(pa1, pa2, PLANE_COLOUR, 2, true);
+            g.setColor(new Color(230, 230, 230));
+            g.drawString(message, (w - g.getFontMetrics().stringWidth(message)) / 2, 22);
+        }
+        else if (model != null && lastRenderNanos > 0)
+        {
+            g.setColor(new Color(110, 116, 128));
+            String info = String.format(java.util.Locale.ROOT, "%.0f ms, %d thread(s), surface at grey %d",
+                    lastRenderNanos / 1e6, renderer.threads(), model.threshold());
+            g.drawString(info, w - g.getFontMetrics().stringWidth(info) - 8, 16);
         }
     }
 
-    /** Draws the 12 edges of the volume's bounding box. */
+    /** The 12 edges of the volume's bounding box, hidden behind the object where they pass. */
     private void drawBox()
     {
         int w = getWidth();
@@ -300,65 +382,111 @@ final class VolumeView3D extends JComponent
         double sx = volume.sizeX() - 1;
         double sy = volume.sizeY() - 1;
         double sz = volume.sizeZ() - 1;
-        Vec3[] corners = new Vec3[8];
+        Raster.Vertex[] c = new Raster.Vertex[8];
         for (int i = 0; i < 8; i++)
         {
-            corners[i] = new Vec3((i & 1) == 0 ? 0 : sx, (i & 2) == 0 ? 0 : sy, (i & 4) == 0 ? 0 : sz);
+            double x = 0;
+            double y = 0;
+            double z = 0;
+            if ((i & 1) != 0)
+            {
+                x = sx;
+            }
+            if ((i & 2) != 0)
+            {
+                y = sy;
+            }
+            if ((i & 4) != 0)
+            {
+                z = sz;
+            }
+            c[i] = camera.project(geometry.toWorld(new Vec3(x, y, z)), w, h, 0, 0);
         }
         int[][] edges = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
         for (int i = 0; i < edges.length; i++)
         {
-            Raster.Vertex a = camera.project(corners[edges[i][0]], w, h, 0, 0);
-            Raster.Vertex b = camera.project(corners[edges[i][1]], w, h, 0, 0);
-            raster.line(a, b, BOX_COLOUR, 1, true);
+            raster.line(c[edges[i][0]], c[edges[i][1]], BOX_COLOUR, 1, true);
         }
-        // Axis arrows at the origin corner.
-        double len = 0.25 * Math.min(sx, Math.min(sy, sz));
-        Vec3 o = new Vec3(0, 0, 0);
-        raster.line(camera.project(o, w, h, 0, 0), camera.project(new Vec3(len, 0, 0), w, h, 0, 0), 0xFFE05555, 2, false);
-        raster.line(camera.project(o, w, h, 0, 0), camera.project(new Vec3(0, len, 0), w, h, 0, 0), 0xFF5FBF5F, 2, false);
-        raster.line(camera.project(o, w, h, 0, 0), camera.project(new Vec3(0, 0, len), w, h, 0, 0), 0xFF5C8DFF, 2, false);
     }
 
-    /**
-     * @param (Graphics2D) g graphics for text
-     */
-    private void drawLabels(Graphics2D g)
+    /** The triangle / trapezoid: bright where visible, dim where the object hides it. */
+    private void drawPlaneOutline()
     {
+        if (plane == null || !plane.isRenderable())
+        {
+            return;
+        }
         int w = getWidth();
         int h = getHeight();
-        double len = 0.25 * Math.min(volume.sizeX() - 1, Math.min(volume.sizeY() - 1, volume.sizeZ() - 1)) + 6;
-        label(g, camera.project(new Vec3(len, 0, 0), w, h, 0, 0), "X", new Color(0xE05555));
-        label(g, camera.project(new Vec3(0, len, 0), w, h, 0, 0), "Y", new Color(0x5FBF5F));
-        label(g, camera.project(new Vec3(0, 0, len), w, h, 0, 0), "Z", new Color(0x5C8DFF));
-        if (plane != null && showPlane)
+        Raster.Vertex a1 = camera.project(geometry.toWorld(plane.a1()), w, h, 0, 0);
+        Raster.Vertex a2 = camera.project(geometry.toWorld(plane.a2()), w, h, 0, 0);
+        Raster.Vertex b = camera.project(geometry.toWorld(plane.b()), w, h, 0, 0);
+        Raster.Vertex c = camera.project(geometry.toWorld(plane.c()), w, h, 0, 0);
+        Raster.Vertex[][] sides = {{a1, b}, {b, c}, {c, a2}, {a2, a1}};
+        for (int i = 0; i < sides.length; i++)
         {
-            Color orange = new Color(PLANE_COLOUR);
-            if (plane.isTriangle())
-            {
-                label(g, camera.project(plane.a1(), w, h, 0, 0), "a", orange);
-            }
-            else
-            {
-                label(g, camera.project(plane.a1(), w, h, 0, 0), "a1", orange);
-                label(g, camera.project(plane.a2(), w, h, 0, 0), "a2", orange);
-            }
-            label(g, camera.project(plane.b(), w, h, 0, 0), "b", orange);
-            label(g, camera.project(plane.c(), w, h, 0, 0), "c", orange);
+            raster.line(sides[i][0], sides[i][1], PLANE_HIDDEN, 1, false);
         }
-        g.setColor(new Color(150, 156, 168));
-        g.drawString("drag: rotate   wheel: slice   ctrl+wheel: zoom   double-click: reset", 8, h - 8);
+        for (int i = 0; i < sides.length; i++)
+        {
+            raster.line(sides[i][0], sides[i][1], PLANE_COLOUR, 2, true);
+        }
     }
 
     /**
      * @param (Graphics2D) g graphics
-     * @param (Raster.Vertex) at screen position
-     * @param (String) text label
-     * @param (Color) colour colour
      */
-    private static void label(Graphics2D g, Raster.Vertex at, String text, Color colour)
+    private void drawPoints(Graphics2D g)
     {
-        g.setColor(colour);
-        g.drawString(text, (int) at.x + 4, (int) at.y - 4);
+        int w = getWidth();
+        int h = getHeight();
+        g.setFont(getFont().deriveFont(Font.BOLD, 13f));
+        for (int i = 0; i < points.size(); i++)
+        {
+            Raster.Vertex v = camera.project(geometry.toWorld(points.get(i)), w, h, 0, 0);
+            g.setColor(new Color(0xFF9F1C));
+            g.fillOval((int) v.x - 5, (int) v.y - 5, 10, 10);
+            g.setColor(Color.BLACK);
+            g.drawOval((int) v.x - 5, (int) v.y - 5, 10, 10);
+            g.setColor(new Color(0xFFD08A));
+            g.drawString(pointNames.get(i), (int) v.x + 8, (int) v.y - 7);
+        }
+    }
+
+    /**
+     * Orientation arrows in the corner: L / P / S when the file says where they are, else x / y / z.
+     *
+     * @param (Graphics2D) g graphics
+     * @param (int) w width
+     * @param (int) h height
+     */
+    private void drawAxes(Graphics2D g, int w, int h)
+    {
+        int ox = 46;
+        int oy = h - 52;
+        double len = 30;
+        Vec3[] axes = {new Vec3(1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, 0, 1)};
+        String[] names = {"x", "y", "z"};
+        if (geometry.known())
+        {
+            names = new String[] {"L", "P", "S"};
+        }
+        Color[] colours = {new Color(0xE05555), new Color(0x5FBF5F), new Color(0x5C8DFF)};
+        g.setStroke(new BasicStroke(2f));
+        g.setFont(getFont().deriveFont(Font.BOLD, 12f));
+        for (int i = 0; i < 3; i++)
+        {
+            Vec3 d = axes[i];
+            if (!geometry.known())
+            {
+                // Without geometry the world axes are the index axes.
+                d = geometry.toWorld(axes[i]).sub(geometry.toWorld(new Vec3(0, 0, 0))).normalized();
+            }
+            double ex = d.dot(camera.right()) * len;
+            double ey = -d.dot(camera.up()) * len;
+            g.setColor(colours[i]);
+            g.drawLine(ox, oy, (int) (ox + ex), (int) (oy + ey));
+            g.drawString(names[i], (int) (ox + ex * 1.25) - 4, (int) (oy + ey * 1.25) + 5);
+        }
     }
 }

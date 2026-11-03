@@ -16,6 +16,11 @@ public abstract class Volume
     protected final int sz;
     private final VoxelType type;
 
+    /** Name of the file's physical space (e.g. "left-posterior-superior"), or null. */
+    private String space;
+    /** Physical direction (with length = spacing) of one step along x, y, z; null when unknown. */
+    private double[][] spaceDirections;
+
     /**
      * @param (int) sx size along x
      * @param (int) sy size along y
@@ -173,5 +178,53 @@ public abstract class Volume
         {
             throw new IllegalArgumentException(name + " must be in [1, " + MAX_SIZE + "), got " + s);
         }
+    }
+
+    /**
+     * Physical geometry from the file header (NRRD "space" and "space directions"). Only the
+     * viewer uses it (orientation labels, voxel aspect); the projection works in voxel indices,
+     * as the assignment defines it.
+     *
+     * @param (String) spaceName e.g. "left-posterior-superior", or null
+     * @param (double[][]) directions 3 vectors of 3 numbers (one per index axis), or null
+     */
+    public void setSpace(String spaceName, double[][] directions)
+    {
+        this.space = spaceName;
+        if (directions == null)
+        {
+            this.spaceDirections = null;
+            return;
+        }
+        this.spaceDirections = new double[3][3];
+        for (int i = 0; i < 3; i++)
+        {
+            System.arraycopy(directions[i], 0, this.spaceDirections[i], 0, 3);
+        }
+    }
+
+    /**
+     * @return the physical space name, or null when the file did not give one
+     */
+    public String space()
+    {
+        return space;
+    }
+
+    /**
+     * @return a copy of the per-axis physical step vectors, or null when unknown
+     */
+    public double[][] spaceDirections()
+    {
+        if (spaceDirections == null)
+        {
+            return null;
+        }
+        double[][] copy = new double[3][3];
+        for (int i = 0; i < 3; i++)
+        {
+            System.arraycopy(spaceDirections[i], 0, copy[i], 0, 3);
+        }
+        return copy;
     }
 }

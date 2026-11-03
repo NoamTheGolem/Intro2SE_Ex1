@@ -225,6 +225,30 @@ public final class PlaneSpec
     }
 
     /**
+     * The nearest plane that follows the Q&amp;A rules, for points placed by hand (clicks are never
+     * exact). A triangle keeps a and b and the direction from a to c; only c moves, to |ac| = |ab|.
+     * A trapezoid becomes the isosceles trapezoid with the same centre, orientation and size.
+     *
+     * @param (Plane) p any renderable plane
+     * @return a valid plane
+     */
+    public static Plane makeIsosceles(Plane p)
+    {
+        if (p.isTriangle())
+        {
+            Vec3 a = p.a1();
+            Vec3 ac = p.c().sub(a);
+            double ab = a.dist(p.b());
+            if (ac.length() < 1e-9)
+            {
+                return p;
+            }
+            return Plane.triangle(a, p.b(), a.add(ac.normalized().scale(ab)));
+        }
+        return fromPlane(p).toPlane();
+    }
+
+    /**
      * Linear interpolation of every parameter (angles along the shorter arc).
      *
      * @param (PlaneSpec) a start

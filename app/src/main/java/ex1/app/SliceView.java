@@ -11,8 +11,10 @@ import java.awt.image.DataBufferByte;
 import javax.swing.JComponent;
 
 /**
- * The 2-D view: the cross-section of the current plane, scaled to fit, one voxel per pixel at
- * 100 %. This is the image the video frames are made of.
+ * The 2-D view: the projection of the current plane (the image E of the assignment), scaled to
+ * fit, one voxel per pixel at 100 %. This is the image the video frames are made of. The corners
+ * are labelled with the plane's points: the rows run from the top edge (a, or a1 - a2) down to
+ * the base (b - c), each row from the a1/b side on the left to the a2/c side on the right.
  */
 final class SliceView extends JComponent
 {
@@ -23,6 +25,7 @@ final class SliceView extends JComponent
 
     private transient BufferedImage image;
     private String caption = "";
+    private boolean triangle = true;
 
     /** Dark panel. */
     SliceView()
@@ -51,6 +54,15 @@ final class SliceView extends JComponent
             byte[] dst = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
             System.arraycopy(grey, 0, dst, 0, dst.length);
         }
+        repaint();
+    }
+
+    /**
+     * @param (boolean) isTriangle true labels the apex a, false labels a1 and a2
+     */
+    void setCornerLabels(boolean isTriangle)
+    {
+        triangle = isTriangle;
         repaint();
     }
 
@@ -87,6 +99,19 @@ final class SliceView extends JComponent
         g.drawImage(image, x, y, w, h, null);
         g.setColor(new Color(0xFF9F1C));
         g.drawRect(x - 1, y - 1, w + 1, h + 1);
+        g.setFont(getFont().deriveFont(Font.BOLD, 13f));
+        if (triangle)
+        {
+            g.drawString("a", x + w / 2 - 3, y - 4);
+        }
+        else
+        {
+            g.drawString("a1", x - 2, y - 4);
+            g.drawString("a2", x + w - 14, y - 4);
+        }
+        g.drawString("b", x - 12, y + h + 4);
+        g.drawString("c", x + w + 4, y + h + 4);
+        g.setFont(getFont());
         g.setColor(TEXT);
         g.drawString(caption, 8, getHeight() - 8);
         g.dispose();

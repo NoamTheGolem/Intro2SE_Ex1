@@ -80,6 +80,7 @@ public final class NrrdReader
 
             Volume volume = Volume.create(type, sizes[0], sizes[1], sizes[2]);
             readSamples(data, volume, order);
+            volume.setSpace(fields.get("space"), parseDirections(fields));
             return volume;
         }
         finally
@@ -384,6 +385,69 @@ public final class NrrdReader
             throw new IOException("NRRD header is missing required field '" + key + "'");
         }
         return v;
+    }
+
+    /**
+     * Reads "space directions: (0,1,0) (0,0,-1) (-1.3,0,0)" or the older "spacings: 1 1 1.3".
+     * Geometry is optional (only the viewer uses it), so anything unreadable gives null instead
+     * of an error.
+     *
+     * @param (Map) fields header fields
+     * @return one physical step vector per index axis, or null
+     */
+    static double[][] parseDirections(Map<String, String> fields)
+    {
+        String dirs = fields.get("space directions");
+        try
+        {
+            if (dirs != null)
+            {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\(([^)]*)\\)").matcher(dirs);
+                double[][] out = new double[3][];
+                int n = 0;
+                while (m.find() && n < 3)
+                {
+                    String[] parts = m.group(1).split(",");
+                    if (parts.length != 3)
+                    {
+                        return null;
+                    }
+                    out[n] = new double[] {Double.parseDouble(parts[0].trim()), Double.parseDouble(parts[1].trim()),
+                            Double.parseDouble(parts[2].trim())};
+                    n++;
+                }
+                if (n != 3)
+                {
+                    return null;
+                }
+                return out;
+            }
+            String spacings = fields.get("spacings");
+            if (spacings != null)
+            {
+                String[] parts = spacings.trim().split("\\s+");
+                if (parts.length != 3)
+                {
+                    return null;
+                }
+                double[][] out = new double[3][3];
+                for (int i = 0; i < 3; i++)
+                {
+                    double s = Double.parseDouble(parts[i]);
+                    if (!(s > 0) || Double.isInfinite(s))
+                    {
+                        return null;
+                    }
+                    out[i][i] = s;
+                }
+                return out;
+            }
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
+        return null;
     }
 
     /**

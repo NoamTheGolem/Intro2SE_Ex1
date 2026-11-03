@@ -5,6 +5,7 @@ import ex1.core.IntensityWindow;
 import ex1.core.ParallelProjector;
 import ex1.core.Plane;
 import ex1.core.Projector;
+import ex1.core.Vec3;
 import ex1.core.Volume;
 import ex1.io.NrrdReader;
 import ex1.io.PlaneCsvReader;
@@ -13,13 +14,16 @@ import ex1.io.VideoWriter;
 import ex1.io.VideoWriters;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.event.ActionEvent;
@@ -33,6 +37,8 @@ import java.util.concurrent.ExecutionException;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -41,15 +47,19 @@ import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
 import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
@@ -63,34 +73,44 @@ import javax.swing.event.ListSelectionListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * The application: load a 3-D model (NRRD), cut it with a plane you control, see the model and
- * the cut, collect the planes of a use case into a list (or load the course's CSV), play them,
- * and export the video. The command-line demo (Ex0) is the batch form of the same pipeline.
+ * The application (the deliverable of Ex1): open a scan (NRRD), see it as a solid object, choose
+ * a plane by 3 points (or 4 for a trapezoid) - typed, or clicked on the views - and see the object
+ * cut open along it (the inside shows on the cut face) and the plane's projection, the image of
+ * the assignment. The three standard views of 3D Slicer (axial, coronal, sagittal) show where the
+ * plane crosses the scan. Planes are collected into a use case (or loaded from the lecturer's
+ * CSV), played, and exported as the video, with the CSV next to it. The command-line demo (Ex0) is
+ * the batch form of the same pipeline and reproduces an export byte for byte.
  */
-public final class StudioApp implements VolumeView3D.Host
+public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 {
-    private static final String TITLE = "Ex1 Studio - cut a 3-D volume with a plane";
+    private static final String TITLE = "Ex1 - cut a 3-D scan with a plane";
     private static final int CORES = Runtime.getRuntime().availableProcessors();
     private static final int PLAY_FPS = 15;
     private static final int DEFAULT_EXPORT_FPS = 15;
-    private static final int MAX_LIST_LINES_IN_DIALOG = 15;
+    private static final int MAX_LIST_LINES_IN_DIALOG = 16;
     private static final int SLIDER_SCALE = 10;
     private static final double NANOS_PER_MS = 1e6;
+    private static final String[] TRIANGLE_NAMES = {"a", "b", "c"};
+    private static final String[] TRAPEZOID_NAMES = {"a1", "a2", "b", "c"};
+    private static final int CONTROL_WIDTH = 430;
 
     /** One entry of the use-case list: a plane (null = black frame) and where it came from. */
     static final class Keyframe
     {
         final Plane plane;
         final String origin;
+        final String note;
 
         /**
          * @param (Plane) plane plane or null
          * @param (String) origin e.g. "row 3" or "added"
+         * @param (String) note first warning of the row, or null
          */
-        Keyframe(Plane plane, String origin)
+        Keyframe(Plane plane, String origin, String note)
         {
             this.plane = plane;
             this.origin = origin;
+            this.note = note;
         }
 
         @Override
@@ -98,9 +118,14 @@ public final class StudioApp implements VolumeView3D.Host
         {
             if (plane == null)
             {
-                return origin + ": cannot be projected (black frame)";
+                return origin + ": black frame - " + note;
             }
-            return origin + ": " + PlaneSpec.fromPlane(plane).label();
+            String text = origin + ": " + PlaneSpec.fromPlane(plane).label();
+            if (note != null)
+            {
+                text += "  (!)";
+            }
+            return text;
         }
     }
 
@@ -108,24 +133,46 @@ public final class StudioApp implements VolumeView3D.Host
     private File volumeFile;
     private Volume volume;
     private IntensityWindow window;
+    private VolumeGeometry geometry;
     private Projector projector;
     private PlaneSpec spec;
     private Plane plane;
+    private File matchingCsv;
     private final DefaultListModel<Keyframe> keyframes = new DefaultListModel<Keyframe>();
     private List<Plane> playSequence;
     private int playIndex;
     private boolean busy;
     private boolean updatingSliders;
+    private int modelGeneration;
+
+    // ---- picking
+    private String[] pickNames;
+    private Vec3[] picked;
+    private int pickIndex = -1;
+    private int pickOnly = -1;
 
     // ---- views
     private final JFrame frame = new JFrame(TITLE);
-    private final VolumeView3D view3d = new VolumeView3D(this);
-    private final SliceView view2d = new SliceView();
+    private final VolumeView3D view3d = new VolumeView3D(this, CORES);
+    private final SliceView cutView = new SliceView();
+    private final OrthoView.Panel[] orthos = new OrthoView.Panel[3];
     private final JLabel status = new JLabel(" ");
     private final JProgressBar progress = new JProgressBar();
     private final JComboBox<String> interpBox = new JComboBox<String>(new String[] {"Nearest", "Trilinear"});
-    private final JCheckBox showSlices = new JCheckBox("Model slices", true);
-    private final JCheckBox showCut = new JCheckBox("Cutting plane", true);
+    private final JCheckBox cutOpenBox = new JCheckBox("Cut open", true);
+    private final JSlider surface = new JSlider(1, 254, 40);
+    private final JLabel surfaceValue = new JLabel("40");
+
+    // ---- points editor
+    private final JRadioButton threePoints = new JRadioButton("3 points (triangle)", true);
+    private final JRadioButton fourPoints = new JRadioButton("4 points (trapezoid)");
+    private final JLabel[] rowNames = new JLabel[4];
+    private final JTextField[][] fields = new JTextField[4][3];
+    private final JButton[] pickButtons = new JButton[4];
+    private final JLabel pointsInfo = new JLabel(" ");
+    private final JButton pickAll = new JButton("Pick on the views");
+
+    // ---- move / turn
     private final JSlider sx = slider(0, 100, 50);
     private final JSlider sy = slider(0, 100, 50);
     private final JSlider sz = slider(0, 100, 50);
@@ -137,10 +184,13 @@ public final class StudioApp implements VolumeView3D.Host
     private final JSlider sTop = slider(0, 100, 100);
     private final JLabel[] sliderValues = new JLabel[9];
     private final JTextField csvRow = new JTextField();
+
+    // ---- use case
     private final JList<Keyframe> list = new JList<Keyframe>(keyframes);
     private final JSpinner betweenSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 120, 1));
     private final JSpinner fpsSpinner = new JSpinner(new SpinnerNumberModel(DEFAULT_EXPORT_FPS, 1, 60, 1));
     private final JButton playButton = new JButton("Play");
+    private final JButton matchingButton = new JButton("Load its use case");
     private final Timer playTimer;
 
     // ===================================================================== ENTRY
@@ -192,16 +242,75 @@ public final class StudioApp implements VolumeView3D.Host
 
     // ============================================================ BUILD PIPELINE
 
-    /** Lays out toolbar, the two views, the plane editor and the use-case list. */
+    /** Lays out the toolbar, the five views and the control column. */
     private void buildWindow()
     {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setMinimumSize(new Dimension(1000, 700));
-        frame.setSize(new Dimension(1360, 900));
+        frame.setMinimumSize(new Dimension(1100, 700));
+        frame.setSize(new Dimension(1500, 920));
         frame.setLocationRelativeTo(null);
 
-        // --- toolbar
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        for (int v = 0; v < 3; v++)
+        {
+            orthos[v] = new OrthoView.Panel(v, this);
+        }
+        JSplitPane topRow = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, titled(view3d, "3-D model - cut open by the plane"),
+                titled(cutView, "The cut - projection of the plane (one video frame)"));
+        topRow.setResizeWeight(0.58);
+        topRow.setBorder(null);
+        JPanel slices = new JPanel(new GridLayout(1, 3, 3, 0));
+        for (int v = 0; v < 3; v++)
+        {
+            slices.add(orthos[v]);
+        }
+        JSplitPane views = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topRow, slices);
+        views.setResizeWeight(0.62);
+        views.setBorder(null);
+
+        JPanel controls = new ColumnPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        controls.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        controls.add(buildPointsPanel());
+        controls.add(buildMovePanel());
+        controls.add(buildUseCasePanel());
+        JScrollPane controlScroll = new JScrollPane(controls, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        controlScroll.setBorder(null);
+        controlScroll.getVerticalScrollBar().setUnitIncrement(16);
+        controlScroll.setPreferredSize(new Dimension(CONTROL_WIDTH, 600));
+
+        JPanel statusBar = new JPanel(new BorderLayout(8, 0));
+        statusBar.setBorder(BorderFactory.createEmptyBorder(2, 8, 4, 8));
+        statusBar.add(status, BorderLayout.CENTER);
+        progress.setVisible(false);
+        progress.setStringPainted(true);
+        statusBar.add(progress, BorderLayout.EAST);
+
+        frame.getContentPane().setLayout(new BorderLayout());
+        frame.getContentPane().add(buildToolbar(), BorderLayout.NORTH);
+        frame.getContentPane().add(views, BorderLayout.CENTER);
+        frame.getContentPane().add(controlScroll, BorderLayout.EAST);
+        frame.getContentPane().add(statusBar, BorderLayout.SOUTH);
+
+        FileDrop drop = new FileDrop();
+        frame.getRootPane().setTransferHandler(drop);
+        view3d.setTransferHandler(drop);
+        cutView.setTransferHandler(drop);
+        for (int v = 0; v < 3; v++)
+        {
+            orthos[v].view().setTransferHandler(drop);
+        }
+        rebuildProjector();
+        updateEnabled();
+        status.setText("Open a scan: \"Open NRRD...\", \"Samples\", or drop a .nrrd file on the window.");
+    }
+
+    /**
+     * @return the toolbar
+     */
+    private JPanel buildToolbar()
+    {
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 5));
         top.add(button("Open NRRD...", new ActionListener()
         {
             @Override
@@ -210,16 +319,18 @@ public final class StudioApp implements VolumeView3D.Host
                 chooseVolume();
             }
         }));
-        top.add(button("Open sample", new ActionListener()
+        final JButton samples = new JButton("Samples");
+        samples.addActionListener(new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
             {
-                openSample();
+                showSamplesMenu(samples);
             }
-        }));
-        top.add(Box.createHorizontalStrut(12));
-        top.add(button("Load use cases (CSV)...", new ActionListener()
+        });
+        top.add(samples);
+        top.add(Box.createHorizontalStrut(10));
+        top.add(button("Load use case (CSV)...", new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
@@ -235,31 +346,19 @@ public final class StudioApp implements VolumeView3D.Host
                 saveCsv();
             }
         }));
-        top.add(button("Export video...", new ActionListener()
+        JButton export = button("Export video...", new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
             {
                 exportVideo();
             }
-        }));
-        top.add(Box.createHorizontalStrut(12));
+        });
+        export.setFont(export.getFont().deriveFont(Font.BOLD));
+        top.add(export);
+        top.add(Box.createHorizontalStrut(10));
         top.add(new JLabel("Sampling:"));
         top.add(interpBox);
-        top.add(Box.createHorizontalStrut(12));
-        top.add(new JLabel("Show:"));
-        top.add(showSlices);
-        top.add(showCut);
-        ActionListener layers = new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                view3d.setLayers(showSlices.isSelected(), showCut.isSelected());
-            }
-        };
-        showSlices.addActionListener(layers);
-        showCut.addActionListener(layers);
         interpBox.addActionListener(new ActionListener()
         {
             @Override
@@ -269,86 +368,213 @@ public final class StudioApp implements VolumeView3D.Host
                 refreshViews();
             }
         });
-
-        // --- views
-        JSplitPane views = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, view3d, view2d);
-        views.setResizeWeight(0.6);
-        views.setBorder(null);
-
-        // --- bottom: editor + list
-        JPanel bottom = new JPanel(new BorderLayout(8, 0));
-        bottom.setBorder(BorderFactory.createEmptyBorder(6, 8, 4, 8));
-        bottom.add(buildEditor(), BorderLayout.CENTER);
-        bottom.add(buildKeyframePanel(), BorderLayout.EAST);
-
-        JPanel statusBar = new JPanel(new BorderLayout(8, 0));
-        statusBar.setBorder(BorderFactory.createEmptyBorder(2, 8, 4, 8));
-        statusBar.add(status, BorderLayout.CENTER);
-        progress.setVisible(false);
-        progress.setStringPainted(true);
-        statusBar.add(progress, BorderLayout.EAST);
-
-        JPanel south = new JPanel(new BorderLayout());
-        south.add(bottom, BorderLayout.CENTER);
-        south.add(statusBar, BorderLayout.SOUTH);
-
-        frame.getContentPane().setLayout(new BorderLayout());
-        frame.getContentPane().add(top, BorderLayout.NORTH);
-        frame.getContentPane().add(views, BorderLayout.CENTER);
-        frame.getContentPane().add(south, BorderLayout.SOUTH);
-
-        FileDrop drop = new FileDrop();
-        frame.getRootPane().setTransferHandler(drop);
-        view3d.setTransferHandler(drop);
-        view2d.setTransferHandler(drop);
-
-        rebuildProjector();
-        updateEnabled();
+        top.add(Box.createHorizontalStrut(10));
+        cutOpenBox.setToolTipText("Remove the half of the object in front of the plane, so its inside shows");
+        cutOpenBox.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                view3d.setCutOpen(cutOpenBox.isSelected());
+            }
+        });
+        top.add(cutOpenBox);
+        top.add(new JLabel("Surface:"));
+        surface.setPreferredSize(new Dimension(130, 24));
+        surface.setToolTipText("Grey level where the object's surface is (Otsu's threshold by default)");
+        surface.setEnabled(false);
+        surface.addChangeListener(new ChangeListener()
+        {
+            @Override
+            public void stateChanged(ChangeEvent e)
+            {
+                surfaceValue.setText(Integer.toString(surface.getValue()));
+                if (!surface.getValueIsAdjusting())
+                {
+                    changeSurface(surface.getValue());
+                }
+            }
+        });
+        top.add(surface);
+        top.add(surfaceValue);
+        return top;
     }
 
     /**
-     * @return the plane editor: presets and sliders
+     * @return the "plane by points" editor
      */
-    private JPanel buildEditor()
+    private JPanel buildPointsPanel()
     {
         JPanel p = new JPanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder("Cutting plane"));
+        p.setBorder(BorderFactory.createTitledBorder("1. The plane - its points (voxel x, y, z)"));
         GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(1, 4, 1, 4);
+        g.insets = new Insets(1, 3, 1, 3);
         g.anchor = GridBagConstraints.WEST;
+        ButtonGroup shape = new ButtonGroup();
+        shape.add(threePoints);
+        shape.add(fourPoints);
+        ActionListener onShape = new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                showPointRows();
+                stopPicking();
+                if (plane != null && plane.isTriangle() == fourPoints.isSelected())
+                {
+                    // Switch the current plane to the other shape, keeping its place and size.
+                    double top = 0.0;
+                    if (fourPoints.isSelected())
+                    {
+                        top = 0.5;
+                    }
+                    applySpec(spec.withShape(spec.width, top, spec.height));
+                }
+            }
+        };
+        threePoints.addActionListener(onShape);
+        fourPoints.addActionListener(onShape);
+        JPanel shapeRow = new JPanel(new GridLayout(1, 2, 2, 0));
+        shapeRow.add(threePoints);
+        shapeRow.add(fourPoints);
+        g.gridx = 0;
+        g.gridy = 0;
+        g.gridwidth = 5;
+        p.add(shapeRow, g);
+        g.gridwidth = 1;
+        g.gridy = 1;
+        String[] heads = {"", "x", "y", "z", ""};
+        for (int c = 0; c < heads.length; c++)
+        {
+            g.gridx = c;
+            p.add(new JLabel(heads[c]), g);
+        }
+        ActionListener apply = new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                applyPointFields();
+            }
+        };
+        for (int r = 0; r < 4; r++)
+        {
+            g.gridy = 2 + r;
+            g.gridx = 0;
+            rowNames[r] = new JLabel("a");
+            rowNames[r].setFont(rowNames[r].getFont().deriveFont(Font.BOLD));
+            p.add(rowNames[r], g);
+            for (int c = 0; c < 3; c++)
+            {
+                g.gridx = 1 + c;
+                fields[r][c] = new JTextField(5);
+                fields[r][c].setMinimumSize(fields[r][c].getPreferredSize());
+                fields[r][c].addActionListener(apply);
+                p.add(fields[r][c], g);
+            }
+            g.gridx = 4;
+            final int row = r;
+            pickButtons[r] = new JButton("pick");
+            pickButtons[r].setMargin(new Insets(1, 6, 1, 6));
+            pickButtons[r].setToolTipText("Click this point on the 3-D model or on a slice view");
+            pickButtons[r].addActionListener(new ActionListener()
+            {
+                @Override
+                public void actionPerformed(ActionEvent e)
+                {
+                    startPicking(row);
+                }
+            });
+            p.add(pickButtons[r], g);
+        }
+        JPanel buttons = new JPanel(new GridLayout(1, 3, 3, 0));
+        pickAll.setToolTipText("Click the points one after the other on the 3-D model or the slice views");
+        pickAll.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                if (pickIndex >= 0)
+                {
+                    stopPicking();
+                }
+                else
+                {
+                    startPicking(-1);
+                }
+            }
+        });
+        buttons.add(small(pickAll));
+        buttons.add(small(button("Apply", apply)));
+        buttons.add(small(button("Make isosceles", new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                if (plane != null && plane.isRenderable())
+                {
+                    applyPlane(PlaneSpec.makeIsosceles(plane));
+                }
+            }
+        })));
+        g.gridx = 0;
+        g.gridy = 6;
+        g.gridwidth = 5;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        p.add(buttons, g);
+        g.gridy = 7;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        pointsInfo.setFont(pointsInfo.getFont().deriveFont(Font.PLAIN, 11f));
+        // Fixed size: a long message must wrap, not widen the panel (which would squeeze the fields).
+        pointsInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, 30));
+        pointsInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, 30));
+        pointsInfo.setVerticalAlignment(JLabel.TOP);
+        p.add(pointsInfo, g);
+        showPointRows();
+        return p;
+    }
 
-        JPanel presets = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        presets.add(new JLabel("Presets:"));
-        presets.add(presetButton("XY", 0));
-        presets.add(presetButton("XZ", 1));
-        presets.add(presetButton("YZ", 2));
+    /**
+     * @return the "move / turn the plane" editor: presets and sliders
+     */
+    private JPanel buildMovePanel()
+    {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setBorder(BorderFactory.createTitledBorder("2. Move / turn the plane"));
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(0, 3, 0, 3);
+        g.anchor = GridBagConstraints.WEST;
+        JPanel presets = new JPanel(new GridLayout(2, 3, 3, 3));
+        presets.add(presetButton("Axial", 0));
+        presets.add(presetButton("Coronal", 1));
+        presets.add(presetButton("Sagittal", 2));
         presets.add(presetButton("Triangle", 3));
         presets.add(presetButton("Oblique", 4));
-        presets.add(Box.createHorizontalStrut(10));
-        presets.add(new JLabel("Slice through:"));
-        presets.add(button("<", new ActionListener()
+        JPanel through = new JPanel(new GridLayout(1, 2, 2, 0));
+        presets.add(through);
+        through.add(small(button("< back", new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
             {
                 slidePlane(-5);
             }
-        }));
-        presets.add(button(">", new ActionListener()
+        })));
+        through.add(small(button("fwd >", new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
             {
                 slidePlane(5);
             }
-        }));
+        })));
         g.gridx = 0;
         g.gridy = 0;
-        g.gridwidth = 6;
+        g.gridwidth = 3;
+        g.fill = GridBagConstraints.HORIZONTAL;
         p.add(presets, g);
         g.gridwidth = 1;
-
-        String[] names = {"Centre X", "Centre Y", "Centre Z", "Yaw", "Pitch", "Roll", "Width", "Height", "Top / bottom"};
+        String[] names = {"Centre x", "Centre y", "Centre z", "Yaw", "Pitch", "Roll", "Width", "Height", "Top / base"};
         JSlider[] sliders = {sx, sy, sz, sYaw, sPitch, sRoll, sWidth, sHeight, sTop};
         ChangeListener onSlide = new ChangeListener()
         {
@@ -363,34 +589,31 @@ public final class StudioApp implements VolumeView3D.Host
         };
         for (int i = 0; i < sliders.length; i++)
         {
-            int col = (i / 3) * 3;
-            int row = 1 + (i % 3);
-            g.gridx = col;
-            g.gridy = row;
+            g.gridy = 1 + i;
+            g.gridx = 0;
             g.weightx = 0;
             g.fill = GridBagConstraints.NONE;
             p.add(new JLabel(names[i]), g);
-            g.gridx = col + 1;
+            g.gridx = 1;
             g.weightx = 1;
             g.fill = GridBagConstraints.HORIZONTAL;
-            sliders[i].setPreferredSize(new Dimension(170, 22));
+            sliders[i].setPreferredSize(new Dimension(150, 20));
             sliders[i].addChangeListener(onSlide);
             p.add(sliders[i], g);
-            g.gridx = col + 2;
+            g.gridx = 2;
             g.weightx = 0;
             g.fill = GridBagConstraints.NONE;
             sliderValues[i] = new JLabel("0");
-            sliderValues[i].setPreferredSize(new Dimension(44, 18));
+            sliderValues[i].setPreferredSize(new Dimension(44, 16));
             p.add(sliderValues[i], g);
         }
         g.gridx = 0;
-        g.gridy = 4;
-        g.gridwidth = 9;
-        g.weightx = 1;
+        g.gridy = 10;
+        g.gridwidth = 3;
         g.fill = GridBagConstraints.HORIZONTAL;
         csvRow.setEditable(false);
-        csvRow.setToolTipText("The current plane as a row of the course CSV (a, b, c or a1, a2, b, c)");
-        JPanel rowPanel = new JPanel(new BorderLayout(6, 0));
+        csvRow.setToolTipText("The current plane as a row of the course CSV (points in the order a, b, c or a1, b, a2, c)");
+        JPanel rowPanel = new JPanel(new BorderLayout(4, 0));
         rowPanel.add(new JLabel("CSV row:"), BorderLayout.WEST);
         rowPanel.add(csvRow, BorderLayout.CENTER);
         p.add(rowPanel, g);
@@ -400,13 +623,12 @@ public final class StudioApp implements VolumeView3D.Host
     /**
      * @return the use-case list with its buttons
      */
-    private JPanel buildKeyframePanel()
+    private JPanel buildUseCasePanel()
     {
         JPanel p = new JPanel(new BorderLayout(4, 4));
-        p.setBorder(BorderFactory.createTitledBorder("Use case: list of planes (one video frame each)"));
-        p.setPreferredSize(new Dimension(520, 190));
+        p.setBorder(BorderFactory.createTitledBorder("3. Use case - the frames of the video"));
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setVisibleRowCount(6);
+        list.setVisibleRowCount(7);
         list.addListSelectionListener(new ListSelectionListener()
         {
             @Override
@@ -418,10 +640,11 @@ public final class StudioApp implements VolumeView3D.Host
                 }
             }
         });
-        p.add(new JScrollPane(list), BorderLayout.CENTER);
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setPreferredSize(new Dimension(CONTROL_WIDTH - 40, 130));
+        p.add(scroll, BorderLayout.CENTER);
 
-        // Two columns so all six buttons fit beside a six-row list.
-        JPanel buttons = new JPanel(new GridLayout(3, 2, 4, 4));
+        JPanel buttons = new JPanel(new GridLayout(2, 3, 3, 3));
         buttons.add(button("Add current", new ActionListener()
         {
             @Override
@@ -429,8 +652,9 @@ public final class StudioApp implements VolumeView3D.Host
             {
                 if (plane != null)
                 {
-                    keyframes.addElement(new Keyframe(plane, "added"));
+                    keyframes.addElement(new Keyframe(plane, "added", firstProblem(plane)));
                     list.setSelectedIndex(keyframes.size() - 1);
+                    list.ensureIndexIsVisible(keyframes.size() - 1);
                     updateEnabled();
                 }
             }
@@ -443,7 +667,7 @@ public final class StudioApp implements VolumeView3D.Host
                 int i = list.getSelectedIndex();
                 if (i >= 0 && plane != null)
                 {
-                    keyframes.set(i, new Keyframe(plane, keyframes.get(i).origin));
+                    keyframes.set(i, new Keyframe(plane, keyframes.get(i).origin, firstProblem(plane)));
                 }
             }
         }));
@@ -485,15 +709,31 @@ public final class StudioApp implements VolumeView3D.Host
                 updateEnabled();
             }
         }));
-        JPanel east = new JPanel(new BorderLayout());
-        east.add(buttons, BorderLayout.NORTH);
-        p.add(east, BorderLayout.EAST);
+        JPanel north = new JPanel(new BorderLayout());
+        matchingButton.setEnabled(false);
+        matchingButton.setToolTipText("The lecturer's CSV for this scan, when it is next to it (csv/<name>.csv) or in data/course");
+        matchingButton.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                if (matchingCsv != null)
+                {
+                    loadCsv(matchingCsv);
+                }
+            }
+        });
+        north.add(matchingButton, BorderLayout.CENTER);
+        p.add(north, BorderLayout.NORTH);
 
-        JPanel south = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        south.add(new JLabel("Frames between planes:"));
-        south.add(betweenSpinner);
-        south.add(new JLabel("Video fps:"));
-        south.add(fpsSpinner);
+        JPanel south = new JPanel();
+        south.setLayout(new BoxLayout(south, BoxLayout.Y_AXIS));
+        south.add(buttons);
+        JPanel play = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        play.add(new JLabel("Frames between:"));
+        play.add(betweenSpinner);
+        play.add(new JLabel("fps:"));
+        play.add(fpsSpinner);
         playButton.addActionListener(new ActionListener()
         {
             @Override
@@ -502,8 +742,40 @@ public final class StudioApp implements VolumeView3D.Host
                 togglePlay();
             }
         });
-        south.add(playButton);
+        play.add(playButton);
+        south.add(play);
+        JButton export = button("Export video (MP4 + CSV)...", new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                exportVideo();
+            }
+        });
+        export.setAlignmentX(Component.LEFT_ALIGNMENT);
+        export.setFont(export.getFont().deriveFont(Font.BOLD));
+        JPanel exportRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        exportRow.add(export);
+        south.add(exportRow);
         p.add(south, BorderLayout.SOUTH);
+        return p;
+    }
+
+    /**
+     * @param (Component) c a view
+     * @param (String) title its caption
+     * @return the view with a small title bar
+     */
+    private static JPanel titled(Component c, String title)
+    {
+        JPanel p = new JPanel(new BorderLayout());
+        JLabel l = new JLabel(" " + title);
+        l.setOpaque(true);
+        l.setBackground(new Color(0x2A2E36));
+        l.setForeground(new Color(0xE6E6E6));
+        l.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        p.add(l, BorderLayout.NORTH);
+        p.add(c, BorderLayout.CENTER);
         return p;
     }
 
@@ -513,7 +785,7 @@ public final class StudioApp implements VolumeView3D.Host
     private void chooseVolume()
     {
         JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Open a 3-D volume");
+        chooser.setDialogTitle("Open a 3-D scan");
         chooser.setFileFilter(new FileNameExtensionFilter("NRRD volumes (*.nrrd, *.nhdr)", "nrrd", "nhdr"));
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
         {
@@ -521,32 +793,55 @@ public final class StudioApp implements VolumeView3D.Host
         }
     }
 
-    /** Opens data/MRHead.nrrd shipped with the project. */
-    private void openSample()
+    /**
+     * @param (Component) anchor the button the menu opens under
+     */
+    private void showSamplesMenu(Component anchor)
     {
-        File sample = findInProject("data", "MRHead.nrrd");
-        if (sample == null)
+        JPopupMenu menu = new JPopupMenu();
+        String[][] samples = {
+            {"MRHead (MRI head) + the lecturer's example CSV", "MRHead.nrrd", "Ex0.csv"},
+            {"Dice + the lecturer's edge cases", "dice.nrrd", "course/edge_cases.csv"},
+            {"Spheres phantom (500^3, performance case)", "phantom_spheres_500.nrrd", ""},
+        };
+        for (int i = 0; i < samples.length; i++)
         {
-            error("Sample not found", "Could not find data/MRHead.nrrd next to the program.\n"
-                    + "Use \"Open NRRD...\" or drop a .nrrd file on the window.");
-            return;
+            final String nrrd = samples[i][1];
+            final String csv = samples[i][2];
+            JMenuItem item = new JMenuItem(samples[i][0]);
+            item.setEnabled(findInProject("data", nrrd) != null);
+            item.addActionListener(new ActionListener()
+            {
+                @Override
+                public void actionPerformed(ActionEvent e)
+                {
+                    File csvFile = null;
+                    if (!csv.isEmpty())
+                    {
+                        csvFile = findInProject("data", csv);
+                    }
+                    openVolume(findInProject("data", nrrd), csvFile);
+                }
+            });
+            menu.add(item);
         }
-        openVolume(sample, findInProject("data", "Ex0.csv"));
+        menu.show(anchor, 0, anchor.getHeight());
     }
 
     /**
-     * Loads a volume in the background, then shows the XY preset (and a CSV, when given).
+     * Loads a volume in the background, shows it, then builds the 3-D model.
      *
      * @param (File) file NRRD file
      * @param (File) csvAfter CSV to load once the volume is in, or null
      */
     void openVolume(final File file, final File csvAfter)
     {
-        if (busy)
+        if (busy || file == null)
         {
             return;
         }
         playTimer.stop();
+        stopPicking();
         setBusy(true, "Loading " + file.getName() + " ...");
         SwingWorker<Object[], Void> worker = new SwingWorker<Object[], Void>()
         {
@@ -568,12 +863,22 @@ public final class StudioApp implements VolumeView3D.Host
                     Object[] r = get();
                     volume = (Volume) r[0];
                     window = (IntensityWindow) r[1];
+                    geometry = VolumeGeometry.of(volume);
                     volumeFile = file;
                     frame.setTitle(TITLE + " - " + file.getName() + "  (" + volume + ")");
                     configureSliderRanges();
-                    view3d.setVolume(volume, window);
+                    view3d.setVolume(volume, window, geometry);
+                    for (int v = 0; v < 3; v++)
+                    {
+                        orthos[v].view().setVolume(volume, window, geometry);
+                        orthos[v].sync();
+                    }
+                    sliceChanged(0);
                     keyframes.clear();
-                    applySpec(PlaneSpec.oblique(volume));
+                    applySpec(PlaneSpec.triangle(volume));
+                    view3d.lookAtPlane(plane);
+                    findMatchingCsv(file);
+                    buildModel(-1);
                     updateEnabled();
                     if (csvAfter != null && csvAfter.isFile())
                     {
@@ -597,10 +902,122 @@ public final class StudioApp implements VolumeView3D.Host
         worker.execute();
     }
 
+    /**
+     * Builds (or re-thresholds) the solid model in the background.
+     *
+     * @param (int) threshold grey level, or -1 for the automatic one
+     */
+    private void buildModel(final int threshold)
+    {
+        final Volume v = volume;
+        final IntensityWindow w = window;
+        final SolidModel base = view3d.model();
+        final int generation = ++modelGeneration;
+        if (threshold < 0)
+        {
+            view3d.setModel(null);
+        }
+        status.setText("Building the 3-D model ...");
+        SwingWorker<SolidModel, Void> worker = new SwingWorker<SolidModel, Void>()
+        {
+            @Override
+            protected SolidModel doInBackground()
+            {
+                if (threshold >= 0 && base != null)
+                {
+                    return base.withThreshold(threshold);
+                }
+                return SolidModel.build(v, w);
+            }
+
+            @Override
+            protected void done()
+            {
+                if (generation != modelGeneration || v != volume)
+                {
+                    return;
+                }
+                try
+                {
+                    SolidModel m = get();
+                    view3d.setModel(m);
+                    surface.setValue(m.threshold());
+                    surfaceValue.setText(Integer.toString(m.threshold()));
+                    updateEnabled();
+                }
+                catch (ExecutionException e)
+                {
+                    error("3-D model failed", message(e.getCause()));
+                }
+                catch (InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    /**
+     * @param (int) t new surface threshold from the toolbar
+     */
+    private void changeSurface(int t)
+    {
+        SolidModel m = view3d.model();
+        if (m == null || volume == null || t == m.threshold())
+        {
+            return;
+        }
+        buildModel(t);
+    }
+
+    /**
+     * Looks for the lecturer's use case of this scan: csv/NAME.csv or NAME.csv next to it, else
+     * data/course/NAME.csv of the project (MRHead uses head.csv).
+     *
+     * @param (File) nrrd the scan
+     */
+    private void findMatchingCsv(File nrrd)
+    {
+        String base = nrrd.getName().replaceFirst("\\.[^.]*$", "");
+        List<String> names = new ArrayList<String>();
+        names.add(base + ".csv");
+        if (base.toLowerCase(Locale.ROOT).startsWith("mrhead"))
+        {
+            names.add("head.csv");
+        }
+        if (base.toLowerCase(Locale.ROOT).startsWith("dice"))
+        {
+            names.add("edge_cases.csv");
+        }
+        matchingCsv = null;
+        File dir = nrrd.getAbsoluteFile().getParentFile();
+        for (int i = 0; i < names.size() && matchingCsv == null; i++)
+        {
+            File[] candidates = {new File(new File(dir, "csv"), names.get(i)), new File(dir, names.get(i)),
+                findInProject("data/course", names.get(i))};
+            for (int k = 0; k < candidates.length && matchingCsv == null; k++)
+            {
+                if (candidates[k] != null && candidates[k].isFile())
+                {
+                    matchingCsv = candidates[k];
+                }
+            }
+        }
+        if (matchingCsv != null)
+        {
+            matchingButton.setText("Load its use case: " + matchingCsv.getName());
+        }
+        else
+        {
+            matchingButton.setText("Load its use case");
+        }
+    }
+
     // ------------------------------------------------------------------ plane editing
 
     /**
-     * Sets the current plane from a spec and updates the sliders and both views.
+     * Sets the current plane from a spec and updates everything.
      *
      * @param (PlaneSpec) s new spec
      */
@@ -613,8 +1030,8 @@ public final class StudioApp implements VolumeView3D.Host
     }
 
     /**
-     * Shows an arbitrary plane (e.g. a CSV row that is not isosceles): the views draw the plane
-     * as it is, the sliders show the closest spec.
+     * Shows an arbitrary plane (a CSV row, typed or clicked points): drawn as it is; the sliders
+     * show the closest spec.
      *
      * @param (Plane) p plane
      */
@@ -634,6 +1051,10 @@ public final class StudioApp implements VolumeView3D.Host
             return;
         }
         double top = sTop.getValue() / 100.0;
+        if (threePoints.isSelected())
+        {
+            top = 0.0;
+        }
         PlaneSpec s = new PlaneSpec(
                 sx.getValue() / (double) SLIDER_SCALE, sy.getValue() / (double) SLIDER_SCALE, sz.getValue() / (double) SLIDER_SCALE,
                 sYaw.getValue(), sPitch.getValue(), sRoll.getValue(),
@@ -717,7 +1138,7 @@ public final class StudioApp implements VolumeView3D.Host
 
     /**
      * @param (String) text button label
-     * @param (int) which 0 = XY, 1 = XZ, 2 = YZ, 3 = triangle, 4 = oblique rectangle
+     * @param (int) which 0 axial, 1 coronal, 2 sagittal, 3 triangle, 4 oblique rectangle
      * @return the button
      */
     private JButton presetButton(String text, final int which)
@@ -731,47 +1152,60 @@ public final class StudioApp implements VolumeView3D.Host
                 {
                     return;
                 }
-                PlaneSpec s;
-                if (which == 0)
+                if (which <= 2)
                 {
-                    s = PlaneSpec.xy(volume);
-                }
-                else if (which == 1)
-                {
-                    s = PlaneSpec.xz(volume);
-                }
-                else if (which == 2)
-                {
-                    s = PlaneSpec.yz(volume);
+                    // The view's own slice: the cut then looks exactly like that view.
+                    fourPoints.setSelected(true);
+                    showPointRows();
+                    applyPlane(geometry.slicePlane(which, orthos[which].view().slice()));
                 }
                 else if (which == 3)
                 {
-                    s = PlaneSpec.triangle(volume);
+                    threePoints.setSelected(true);
+                    showPointRows();
+                    applySpec(PlaneSpec.triangle(volume));
                 }
                 else
                 {
-                    s = PlaneSpec.oblique(volume);
+                    fourPoints.setSelected(true);
+                    showPointRows();
+                    applySpec(PlaneSpec.oblique(volume));
                 }
-                applySpec(s);
+                view3d.lookAtPlane(plane);
             }
         });
     }
 
-    /** Projects the current plane once and hands the result to both views. */
+    /** Projects the current plane once and hands the result to every view. */
     private void refreshViews()
     {
         if (volume == null || plane == null)
         {
-            view2d.setImage(null, 0, 0, "");
-            view3d.setPlane(null, null);
-            csvRow.setText("");
+            cutView.setImage(null, 0, 0, "");
             return;
         }
-        if (!plane.isRenderable())
+        if (plane.isTriangle() != threePoints.isSelected())
         {
-            view2d.setImage(null, 0, 0, "this plane cannot be projected");
-            view3d.setPlane(null, null);
-            csvRow.setText(PlaneCsvWriter.row(plane));
+            threePoints.setSelected(plane.isTriangle());
+            fourPoints.setSelected(!plane.isTriangle());
+            showPointRows();
+        }
+        List<Vec3> pts = planePoints(plane);
+        List<String> names = pointNames(plane);
+        addPickedPoints(pts, names);
+        for (int v = 0; v < 3; v++)
+        {
+            orthos[v].view().setPlane(plane, pts, names);
+        }
+        fieldsFromPlane();
+        csvRow.setText(PlaneCsvWriter.row(plane));
+        csvRow.setCaretPosition(0);
+        String bad = plane.whyNotRenderable();
+        if (bad != null)
+        {
+            cutView.setImage(null, 0, 0, "bad plane: " + bad + " (a black frame in the video)");
+            view3d.setPlane(null, pts, names);
+            pointsInfo.setText(html("Bad plane (a black frame in the video): " + bad, "#c03030"));
             return;
         }
         long t0 = System.nanoTime();
@@ -781,22 +1215,49 @@ public final class StudioApp implements VolumeView3D.Host
         int h = img.height();
         byte[] grey = new byte[w * h];
         window.toGrey(img, grey, w, h, w, h);
-        String shape = "trapezoid";
-        if (plane.isTriangle())
-        {
-            shape = "triangle";
-        }
         List<String> problems = plane.validate(Plane.DEFAULT_EPS);
         String valid = "valid";
         if (!problems.isEmpty())
         {
-            valid = "breaks the rules: " + problems.get(0);
+            valid = "doubtful: " + problems.get(0);
         }
-        view2d.setImage(grey, w, h, String.format(Locale.ROOT, "%s  %dx%d px  |  %s  |  projection %.2f ms (%.0f fps possible, %d thread(s))",
+        String shape = "trapezoid a1, a2, b, c";
+        if (plane.isTriangle())
+        {
+            shape = "triangle a, b, c";
+        }
+        cutView.setImage(grey, w, h, String.format(Locale.ROOT, "%s  %dx%d px  |  %s  |  projection %.2f ms (%.0f fps, %d thread(s))",
                 shape, w, h, valid, ms, 1000.0 / Math.max(ms, 1e-3), CORES));
-        view3d.setPlane(plane, grey);
-        csvRow.setText(PlaneCsvWriter.row(plane));
-        status.setText(volumeFile.getName() + "  " + volume + "   |   " + keyframes.size() + " plane(s) in the use case");
+        cutView.setCornerLabels(plane.isTriangle());
+        view3d.setPlane(plane, pts, names);
+        showPointsInfo(problems);
+        updateStatus();
+    }
+
+    /**
+     * @param (List) problems rule violations of the current plane
+     */
+    private void showPointsInfo(List<String> problems)
+    {
+        if (pickIndex >= 0)
+        {
+            return;
+        }
+        if (problems.isEmpty())
+        {
+            if (plane.isTriangle())
+            {
+                pointsInfo.setText(html(String.format(Locale.ROOT, "Isosceles: |ab| = |ac| = %.2f, |bc| = %.2f",
+                        plane.a1().dist(plane.b()), plane.b().dist(plane.c())), null));
+            }
+            else
+            {
+                pointsInfo.setText(html(String.format(Locale.ROOT, "Isosceles trapezoid: rails %.2f, top %.2f <= base %.2f",
+                        plane.a1().dist(plane.b()), plane.a1().dist(plane.a2()), plane.b().dist(plane.c())), null));
+            }
+            return;
+        }
+        pointsInfo.setText(html("Doubtful (drawn as given): " + problems.get(0) + ". \"Make isosceles\" fixes it.", "#b06000"));
     }
 
     /** Rebuilds the projector after a sampling change (and releases the old thread pool). */
@@ -806,12 +1267,308 @@ public final class StudioApp implements VolumeView3D.Host
         {
             ((ParallelProjector) projector).shutdown();
         }
-        Projector.Interpolation mode = Projector.Interpolation.NEAREST;
-        if (interpBox.getSelectedIndex() == 1)
+        projector = Projector.create(currentMode(), CORES);
+    }
+
+    // ------------------------------------------------------------------ points editor
+
+    /** Shows 3 or 4 rows of point fields. */
+    private void showPointRows()
+    {
+        String[] names = TRIANGLE_NAMES;
+        if (fourPoints.isSelected())
         {
-            mode = Projector.Interpolation.TRILINEAR;
+            names = TRAPEZOID_NAMES;
         }
-        projector = Projector.create(mode, CORES);
+        for (int r = 0; r < 4; r++)
+        {
+            boolean on = r < names.length;
+            rowNames[r].setVisible(on);
+            pickButtons[r].setVisible(on);
+            for (int c = 0; c < 3; c++)
+            {
+                fields[r][c].setVisible(on);
+            }
+            if (on)
+            {
+                rowNames[r].setText(names[r]);
+            }
+        }
+        pickAll.setText("Pick " + String.join(", ", names));
+    }
+
+    /** Writes the current plane's points into the fields. */
+    private void fieldsFromPlane()
+    {
+        List<Vec3> pts = planePoints(plane);
+        for (int r = 0; r < pts.size() && r < 4; r++)
+        {
+            Vec3 p = pts.get(r);
+            fields[r][0].setText(format(p.x));
+            fields[r][1].setText(format(p.y));
+            fields[r][2].setText(format(p.z));
+        }
+    }
+
+    /** Builds the plane from the typed points, exactly as given. */
+    private void applyPointFields()
+    {
+        if (volume == null)
+        {
+            return;
+        }
+        int n = 3;
+        if (fourPoints.isSelected())
+        {
+            n = 4;
+        }
+        Vec3[] p = new Vec3[n];
+        for (int r = 0; r < n; r++)
+        {
+            p[r] = readRow(r);
+            if (p[r] == null)
+            {
+                pointsInfo.setText(html("Point " + rowNames[r].getText() + ": type three numbers", "#c03030"));
+                return;
+            }
+        }
+        applyPlane(planeOf(p));
+    }
+
+    /**
+     * @param (Vec3[]) p points in editor order (a, b, c or a1, a2, b, c)
+     * @return the plane
+     */
+    private static Plane planeOf(Vec3[] p)
+    {
+        if (p.length == 3)
+        {
+            return Plane.triangle(p[0], p[1], p[2]);
+        }
+        return Plane.trapezoid(p[0], p[1], p[2], p[3]);
+    }
+
+    /**
+     * @param (int) r row
+     * @return the typed point, or null when a field is not a number
+     */
+    private Vec3 readRow(int r)
+    {
+        double[] v = new double[3];
+        for (int c = 0; c < 3; c++)
+        {
+            try
+            {
+                v[c] = Double.parseDouble(fields[r][c].getText().trim());
+            }
+            catch (NumberFormatException e)
+            {
+                return null;
+            }
+            if (!Double.isFinite(v[c]))
+            {
+                return null;
+            }
+        }
+        return new Vec3(v[0], v[1], v[2]);
+    }
+
+    /**
+     * Starts placing points with the mouse.
+     *
+     * @param (int) only row to pick alone, or -1 for all points in order
+     */
+    private void startPicking(int only)
+    {
+        if (volume == null)
+        {
+            return;
+        }
+        pickNames = TRIANGLE_NAMES;
+        if (fourPoints.isSelected())
+        {
+            pickNames = TRAPEZOID_NAMES;
+        }
+        picked = new Vec3[pickNames.length];
+        pickOnly = only;
+        pickIndex = 0;
+        if (only >= 0)
+        {
+            pickIndex = only;
+        }
+        setPickingViews(true);
+        pickAll.setText("Stop picking");
+        promptPick();
+        refreshViews();
+    }
+
+    /** Ends picking mode. */
+    private void stopPicking()
+    {
+        pickIndex = -1;
+        pickOnly = -1;
+        picked = null;
+        setPickingViews(false);
+        showPointRows();
+        if (plane != null)
+        {
+            refreshViews();
+        }
+    }
+
+    /**
+     * @param (boolean) on picking mode for all views
+     */
+    private void setPickingViews(boolean on)
+    {
+        view3d.setPicking(on);
+        for (int v = 0; v < 3; v++)
+        {
+            orthos[v].view().setPicking(on);
+        }
+    }
+
+    /** Tells the user which point to click next. */
+    private void promptPick()
+    {
+        pointsInfo.setText(html("Click point " + pickNames[pickIndex] + " on the 3-D model or on a slice view.", "#c06000"));
+    }
+
+    /**
+     * A point was clicked while picking.
+     *
+     * @param (Vec3) p voxel-index point
+     */
+    private void pointPicked(Vec3 p)
+    {
+        picked[pickIndex] = p;
+        fields[pickIndex][0].setText(format(p.x));
+        fields[pickIndex][1].setText(format(p.y));
+        fields[pickIndex][2].setText(format(p.z));
+        if (pickOnly >= 0)
+        {
+            stopPicking();
+            applyPointFields();
+            return;
+        }
+        pickIndex++;
+        if (pickIndex < pickNames.length)
+        {
+            promptPick();
+            refreshViews();
+            return;
+        }
+        Vec3[] pts = picked;
+        stopPicking();
+        Plane p0 = planeOf(pts);
+        String bad = p0.whyNotRenderable();
+        if (bad != null)
+        {
+            applyPlane(p0);
+            return;
+        }
+        if (!p0.validate(Plane.DEFAULT_EPS).isEmpty())
+        {
+            // Clicks are never exact: keep a and b, move c so the triangle is isosceles.
+            Plane fixed = PlaneSpec.makeIsosceles(p0);
+            applyPlane(fixed);
+            pointsInfo.setText(html("Made isosceles for the algorithm: " + describeFix(p0, fixed), null));
+            return;
+        }
+        applyPlane(p0);
+    }
+
+    /**
+     * @param (Plane) before clicked plane
+     * @param (Plane) after corrected plane
+     * @return what moved
+     */
+    private static String describeFix(Plane before, Plane after)
+    {
+        if (before.isTriangle())
+        {
+            return String.format(Locale.ROOT, "c moved along a->c, |ac| %.1f -> %.1f = |ab|",
+                    before.a1().dist(before.c()), after.a1().dist(after.c()));
+        }
+        return "the nearest isosceles trapezoid (same centre, turn and size)";
+    }
+
+    /**
+     * Adds the points clicked so far (while picking) to the markers.
+     *
+     * @param (List) pts markers
+     * @param (List) names labels
+     */
+    private void addPickedPoints(List<Vec3> pts, List<String> names)
+    {
+        if (pickIndex < 0 || picked == null)
+        {
+            return;
+        }
+        pts.clear();
+        names.clear();
+        for (int i = 0; i < picked.length; i++)
+        {
+            if (picked[i] != null)
+            {
+                pts.add(picked[i]);
+                names.add(pickNames[i]);
+            }
+        }
+    }
+
+    @Override
+    public void modelClicked(Vec3 index)
+    {
+        if (pickIndex >= 0)
+        {
+            pointPicked(index);
+            return;
+        }
+        navigateTo(index);
+    }
+
+    @Override
+    public void orthoClicked(int view, Vec3 index)
+    {
+        if (pickIndex >= 0)
+        {
+            pointPicked(index);
+            return;
+        }
+        navigateTo(index);
+    }
+
+    @Override
+    public void sliceChanged(int view)
+    {
+        int[] slices = new int[3];
+        for (int v = 0; v < 3; v++)
+        {
+            slices[v] = orthos[v].view().slice();
+        }
+        for (int v = 0; v < 3; v++)
+        {
+            orthos[v].view().setOtherSlices(slices);
+            orthos[v].sync();
+        }
+    }
+
+    /**
+     * Moves the three slice views through a point (Slicer's crosshair).
+     *
+     * @param (Vec3) p voxel-index point
+     */
+    private void navigateTo(Vec3 p)
+    {
+        double[] c = {p.x, p.y, p.z};
+        for (int v = 0; v < 3; v++)
+        {
+            int axis = geometry.constantAxis(v);
+            orthos[v].view().setSlice((int) Math.round(c[axis]));
+        }
+        sliceChanged(0);
+        status.setText(String.format(Locale.ROOT, "Point (%.1f, %.1f, %.1f): the slice views now go through it", p.x, p.y, p.z));
     }
 
     // ------------------------------------------------------------------ use cases (list)
@@ -828,6 +1585,10 @@ public final class StudioApp implements VolumeView3D.Host
         if (k.plane != null)
         {
             applyPlane(k.plane);
+        }
+        else
+        {
+            status.setText(k.origin + " is a black frame: " + k.note);
         }
     }
 
@@ -853,11 +1614,16 @@ public final class StudioApp implements VolumeView3D.Host
     {
         if (volume == null)
         {
-            error("Open a volume first", "Load a .nrrd file before a CSV of planes.");
+            error("Open a scan first", "Load a .nrrd file before a CSV of planes.");
             return;
         }
-        JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Load a CSV of planes (the course format)");
+        File start = startFolder();
+        if (matchingCsv != null)
+        {
+            start = matchingCsv.getParentFile();
+        }
+        JFileChooser chooser = new JFileChooser(start);
+        chooser.setDialogTitle("Load a use case: a CSV of planes (the course format)");
         chooser.setFileFilter(new FileNameExtensionFilter("CSV planes (*.csv)", "csv"));
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
         {
@@ -866,7 +1632,8 @@ public final class StudioApp implements VolumeView3D.Host
     }
 
     /**
-     * Reads a CSV into the list; rows that break the rules are reported and kept (ADR-0003).
+     * Reads a CSV into the list; doubtful rows are drawn as given and bad rows become black
+     * frames, both reported (ADR-0003).
      *
      * @param (File) file CSV file
      */
@@ -884,19 +1651,26 @@ public final class StudioApp implements VolumeView3D.Host
             for (int i = 0; i < r.rows.size(); i++)
             {
                 PlaneCsvReader.Entry e = r.rows.get(i);
-                keyframes.addElement(new Keyframe(e.plane, "row " + e.row));
+                String note = null;
+                if (!e.warnings.isEmpty())
+                {
+                    note = e.warnings.get(0);
+                }
+                keyframes.addElement(new Keyframe(e.plane, "row " + e.row, note));
             }
             List<String> warnings = r.warnings();
-            if (!warnings.isEmpty())
-            {
-                JOptionPane.showMessageDialog(frame, listText(warnings)
-                        + "\n\nThese rows are kept: they are projected as they are, or shown as black frames.",
-                        file.getName() + ": " + warnings.size() + " note(s)", JOptionPane.WARNING_MESSAGE);
-            }
             updateEnabled();
             if (keyframes.size() > 0)
             {
                 list.setSelectedIndex(0);
+            }
+            status.setText("Loaded " + file.getName() + ": " + r.rows.size() + " planes = " + r.rows.size()
+                    + " frames, " + warnings.size() + " note(s)");
+            if (!warnings.isEmpty())
+            {
+                JOptionPane.showMessageDialog(frame, listText(warnings)
+                        + "\n\nDoubtful rows are drawn as given; bad rows are black frames (as the course's edge cases expect).",
+                        file.getName() + ": " + warnings.size() + " note(s)", JOptionPane.WARNING_MESSAGE);
             }
         }
         catch (IOException e)
@@ -913,8 +1687,8 @@ public final class StudioApp implements VolumeView3D.Host
             return;
         }
         JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Save the planes as CSV");
-        chooser.setSelectedFile(new File(baseName() + "_planes.csv"));
+        chooser.setDialogTitle("Save the use case as CSV");
+        chooser.setSelectedFile(new File(baseName() + "_usecase.csv"));
         if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION)
         {
             return;
@@ -978,6 +1752,7 @@ public final class StudioApp implements VolumeView3D.Host
         {
             return;
         }
+        stopPicking();
         playSequence = expandedPlanes();
         playIndex = 0;
         playButton.setText("Stop");
@@ -997,24 +1772,26 @@ public final class StudioApp implements VolumeView3D.Host
         {
             applyPlane(p);
         }
+        status.setText("Playing frame " + (playIndex + 1) + " / " + playSequence.size());
         playIndex = (playIndex + 1) % playSequence.size();
     }
 
     // ------------------------------------------------------------------ export
 
-    /** Renders the expanded sequence to an MP4 in the background. */
+    /** Renders the expanded sequence to an MP4 in the background, and its CSV next to it. */
     private void exportVideo()
     {
-        if (volume == null || keyframes.isEmpty() || busy)
+        if (volume == null || busy)
         {
-            if (volume != null && keyframes.isEmpty())
-            {
-                error("Nothing to export", "Add planes to the use-case list first (\"Add current\" or load a CSV).");
-            }
+            return;
+        }
+        if (keyframes.isEmpty())
+        {
+            error("Nothing to export", "Add planes to the use case first (\"Add current\", or load a CSV).");
             return;
         }
         JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Export video");
+        chooser.setDialogTitle("Export the use case as a video");
         chooser.setFileFilter(new FileNameExtensionFilter("MP4 video (*.mp4)", "mp4"));
         chooser.setSelectedFile(new File(baseName() + "_usecase.mp4"));
         if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION)
@@ -1086,7 +1863,7 @@ public final class StudioApp implements VolumeView3D.Host
                     {
                         PlaneCsvWriter.write(planes, csv);
                         extra = "\nThe planes were also saved as " + csv.getName()
-                                + " (python Ex0.py <volume> " + csv.getName() + " out.mp4 reproduces the video).";
+                                + " (python Ex0.py <scan> " + csv.getName() + " out.mp4 reproduces the video).";
                     }
                     catch (IOException e)
                     {
@@ -1117,6 +1894,95 @@ public final class StudioApp implements VolumeView3D.Host
     // ========================================================= LOW-LEVEL HELPERS
 
     /**
+     * @param (Plane) p plane
+     * @return its points in editor order: a, b, c or a1, a2, b, c
+     */
+    private static List<Vec3> planePoints(Plane p)
+    {
+        List<Vec3> pts = new ArrayList<Vec3>();
+        pts.add(p.a1());
+        if (!p.isTriangle())
+        {
+            pts.add(p.a2());
+        }
+        pts.add(p.b());
+        pts.add(p.c());
+        return pts;
+    }
+
+    /**
+     * @param (Plane) p plane
+     * @return the labels of its points in editor order
+     */
+    private static List<String> pointNames(Plane p)
+    {
+        List<String> names = new ArrayList<String>();
+        String[] src = TRIANGLE_NAMES;
+        if (!p.isTriangle())
+        {
+            src = TRAPEZOID_NAMES;
+        }
+        for (int i = 0; i < src.length; i++)
+        {
+            names.add(src[i]);
+        }
+        return names;
+    }
+
+    /**
+     * @param (String) text message
+     * @param (String) colour CSS colour, or null for the default
+     * @return the message as wrapping HTML for the narrow info label
+     */
+    private static String html(String text, String colour)
+    {
+        String safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        String style = "width:" + (CONTROL_WIDTH - 80) + "px";
+        if (colour != null)
+        {
+            style += ";color:" + colour;
+        }
+        return "<html><body style='" + style + "'>" + safe + "</body></html>";
+    }
+
+    /**
+     * @param (Plane) p plane
+     * @return the first rule it breaks, or null
+     */
+    private static String firstProblem(Plane p)
+    {
+        String bad = p.whyNotRenderable();
+        if (bad != null)
+        {
+            return bad;
+        }
+        List<String> problems = p.validate(Plane.DEFAULT_EPS);
+        if (problems.isEmpty())
+        {
+            return null;
+        }
+        return problems.get(0);
+    }
+
+    /**
+     * @param (double) v coordinate
+     * @return short text for a field
+     */
+    private static String format(double v)
+    {
+        String s = String.format(Locale.ROOT, "%.2f", v);
+        if (s.endsWith(".00"))
+        {
+            s = s.substring(0, s.length() - 3);
+        }
+        if (s.equals("-0"))
+        {
+            s = "0";
+        }
+        return s;
+    }
+
+    /**
      * @return the sampling mode chosen in the toolbar
      */
     private Projector.Interpolation currentMode()
@@ -1136,7 +2002,14 @@ public final class StudioApp implements VolumeView3D.Host
     {
         busy = b;
         status.setText(text);
-        frame.setCursor(b ? Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR) : Cursor.getDefaultCursor());
+        if (b)
+        {
+            frame.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        }
+        else
+        {
+            frame.setCursor(Cursor.getDefaultCursor());
+        }
         updateEnabled();
     }
 
@@ -1149,11 +2022,28 @@ public final class StudioApp implements VolumeView3D.Host
         {
             sliders[i].setEnabled(haveVolume);
         }
+        sTop.setEnabled(haveVolume && fourPoints.isSelected());
+        surface.setEnabled(haveVolume && view3d.model() != null);
         playButton.setEnabled(haveVolume && !keyframes.isEmpty());
-        if (volume != null)
+        matchingButton.setEnabled(haveVolume && matchingCsv != null);
+        pickAll.setEnabled(haveVolume);
+        updateStatus();
+    }
+
+    /** The status line in the normal state. */
+    private void updateStatus()
+    {
+        if (volume == null || busy || pickIndex >= 0 || playTimer.isRunning())
         {
-            status.setText(volumeFile.getName() + "  " + volume + "   |   " + keyframes.size() + " plane(s) in the use case");
+            return;
         }
+        String spacing = "";
+        if (geometry != null && geometry.known())
+        {
+            spacing = String.format(Locale.ROOT, ", voxel %.2f x %.2f x %.2f mm", geometry.spacing(0), geometry.spacing(1), geometry.spacing(2));
+        }
+        status.setText(volumeFile.getName() + "  " + volume + spacing + "   |   " + keyframes.size()
+                + " plane(s) in the use case");
     }
 
     /**
@@ -1165,6 +2055,16 @@ public final class StudioApp implements VolumeView3D.Host
     {
         JButton b = new JButton(text);
         b.addActionListener(action);
+        return b;
+    }
+
+    /**
+     * @param (JButton) b button
+     * @return the same button with narrow margins (the control column is narrow)
+     */
+    private static JButton small(JButton b)
+    {
+        b.setMargin(new Insets(2, 4, 2, 4));
         return b;
     }
 
@@ -1245,8 +2145,8 @@ public final class StudioApp implements VolumeView3D.Host
     /**
      * Looks for a project file near the jar or the working folder.
      *
-     * @param (String) dir sub-folder
-     * @param (String) name file name
+     * @param (String) dir sub-folder (may contain "/")
+     * @param (String) name file name (may contain "/")
      * @return the file, or null
      */
     private static File findInProject(String dir, String name)
@@ -1336,6 +2236,42 @@ public final class StudioApp implements VolumeView3D.Host
         return t.getMessage();
     }
 
+    /** The control column: as wide as the scroll pane, only scrolls vertically. */
+    private static final class ColumnPanel extends JPanel implements javax.swing.Scrollable
+    {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize()
+        {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(java.awt.Rectangle visible, int orientation, int direction)
+        {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(java.awt.Rectangle visible, int orientation, int direction)
+        {
+            return visible.height;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth()
+        {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight()
+        {
+            return false;
+        }
+    }
+
     /** Accepts files dragged from the file manager: .nrrd/.nhdr volumes or .csv plane lists. */
     private final class FileDrop extends TransferHandler
     {
@@ -1367,7 +2303,7 @@ public final class StudioApp implements VolumeView3D.Host
                 {
                     if (volume == null)
                     {
-                        error("Open a volume first", "Drop or open a .nrrd file before a CSV of planes.");
+                        error("Open a scan first", "Drop or open a .nrrd file before a CSV of planes.");
                         return false;
                     }
                     loadCsv(f);

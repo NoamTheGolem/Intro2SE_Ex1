@@ -177,4 +177,20 @@ public class NrrdReaderTest
             assertTrue(e.getMessage(), e.getMessage().contains(fragment));
         }
     }
+
+    @Test
+    public void readsSpaceDirectionsForTheViewer()
+    {
+        java.util.Map<String, String> fields = new java.util.HashMap<String, String>();
+        fields.put("space directions", "(0,1,0) (0,0,-1) (-1.2999954223632812,0,0)");
+        double[][] d = NrrdReader.parseDirections(fields);
+        assertEquals(-1.2999954223632812, d[2][0], 0.0);
+        assertEquals(-1.0, d[1][2], 0.0);
+        fields.clear();
+        fields.put("spacings", "1 1 1.3");
+        assertEquals(1.3, NrrdReader.parseDirections(fields)[2][2], 0.0);
+        fields.clear();
+        fields.put("space directions", "none (0,1,0) (0,0,1)");
+        assertEquals(null, NrrdReader.parseDirections(fields));
+    }
 }
