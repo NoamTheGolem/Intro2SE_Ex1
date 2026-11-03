@@ -162,8 +162,9 @@ public class PlaneTest
                 new Vec3(199, 160, 20));
         Plane huge = Plane.triangle(new Vec3(99.5, 0, 80), new Vec3(-5000, 179, 80), new Vec3(5199, 179, 80));
         assertFalse(same.isRenderable());
-        assertTrue(same.whyNotRenderable().contains("collinear"));
+        assertEquals("points b and c are the same point", same.whyNotRenderable());
         assertFalse(line.isRenderable());
+        assertTrue(line.whyNotRenderable().contains("collinear"));
         assertFalse(lifted.isRenderable());
         assertTrue(lifted.whyNotRenderable().contains("not on one plane"));
         assertFalse(huge.isRenderable());

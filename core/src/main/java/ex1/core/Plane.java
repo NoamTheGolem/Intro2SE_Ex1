@@ -174,6 +174,11 @@ public final class Plane
         }
         if (triangle)
         {
+            if (b.dist(c) <= 0.0)
+            {
+                // Collinear too, but this is the plainer reason (edge_cases.csv frame 12).
+                return "points b and c are the same point";
+            }
             Vec3 normal = b.sub(a1).cross(c.sub(a1));
             if (normal.length() < DEFAULT_EPS * Math.max(1.0, left * left))
             {
