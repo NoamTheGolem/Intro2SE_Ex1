@@ -69,6 +69,7 @@ final class OrthoView extends JComponent
     private static final Color LABEL = new Color(0xF2D64B);
     private static final int MARGIN = 14;
     private static final double MARK_DISTANCE = 2.5;
+    private static final double SAME_SPOT = 6.0;
 
     private final int view;
     private final transient Host host;
@@ -380,12 +381,21 @@ final class OrthoView extends JComponent
     {
         int c = geometry.constantAxis(view);
         g.setFont(getFont().deriveFont(Font.BOLD, 12f));
-        for (int i = 0; i < points.size(); i++)
+        int n = points.size();
+        double[] xs = new double[n];
+        double[] ys = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            Vec3 p = points.get(i);
+            xs[i] = screenX(coord(p, geometry.horizontalAxis(view)));
+            ys[i] = screenY(coord(p, geometry.verticalAxis(view)));
+        }
+        for (int i = 0; i < n; i++)
         {
             Vec3 p = points.get(i);
             double dist = Math.abs(coord(p, c) - slice) * geometry.spacing(c);
-            double sx = screenX(coord(p, geometry.horizontalAxis(view)));
-            double sy = screenY(coord(p, geometry.verticalAxis(view)));
+            double sx = xs[i];
+            double sy = ys[i];
             if (dist <= MARK_DISTANCE)
             {
                 g.setColor(PLANE);
@@ -398,9 +408,42 @@ final class OrthoView extends JComponent
                 g.setColor(new Color(255, 159, 28, 110));
                 g.drawOval((int) sx - 4, (int) sy - 4, 8, 8);
             }
-            g.setColor(PLANE);
-            g.drawString(pointNames.get(i), (int) sx + 7, (int) sy - 6);
+            String label = sharedLabel(i, xs, ys);
+            if (label != null)
+            {
+                g.setColor(PLANE);
+                g.drawString(label, (int) sx + 7, (int) sy - 6);
+            }
         }
+    }
+
+    /**
+     * Points that land on the same spot of this view (they differ only along the view's depth)
+     * share one label, "a1, b", instead of printing their names on top of each other.
+     *
+     * @param (int) i index of the point
+     * @param (double[]) xs screen x of every point
+     * @param (double[]) ys screen y of every point
+     * @return the label to draw at point i, or null when an earlier point already carries it
+     */
+    private String sharedLabel(int i, double[] xs, double[] ys)
+    {
+        for (int j = 0; j < i; j++)
+        {
+            if (Math.abs(xs[j] - xs[i]) < SAME_SPOT && Math.abs(ys[j] - ys[i]) < SAME_SPOT)
+            {
+                return null;
+            }
+        }
+        StringBuilder label = new StringBuilder(pointNames.get(i));
+        for (int j = i + 1; j < xs.length; j++)
+        {
+            if (Math.abs(xs[j] - xs[i]) < SAME_SPOT && Math.abs(ys[j] - ys[i]) < SAME_SPOT)
+            {
+                label.append(", ").append(pointNames.get(j));
+            }
+        }
+        return label.toString();
     }
 
     /**
