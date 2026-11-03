@@ -1,3 +1,10 @@
 #!/usr/bin/env bash
-# Demo "main" of assignment item 7 (Java version of: python Ex0.py file.nrrd file.csv file.mp4)
-exec java -Xmx2g -jar "$(dirname "$0")/build/Ex0.jar" "$@"
+# Demo "main" of assignment item 7 (Java form of: python Ex0.py file.nrrd file.csv file.mp4).
+# Builds build/Ex0.jar first when it is missing (needs a JDK).
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ ! -f "$HERE/build/Ex0.jar" ]; then
+    echo "build/Ex0.jar is missing - building it with javac ..." >&2
+    "$HERE/scripts/build.sh"
+fi
+exec java -Xmx2g -jar "$HERE/build/Ex0.jar" "$@"
