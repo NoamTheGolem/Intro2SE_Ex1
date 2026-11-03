@@ -1,0 +1,457 @@
+package ex1.io;
+
+import ex1.core.ByteVolume;
+import ex1.core.FloatVolume;
+import ex1.core.IntVolume;
+import ex1.core.ShortVolume;
+import ex1.core.Volume;
+import ex1.core.VoxelType;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
+
+/**
+ * Reads 3D scalar NRRD volumes (format spec: http://teem.sourceforge.net/nrrd/format.html).
+ *
+ * Supported: dimension 3; types int8/uint8/int16/uint16/int32/uint32/float; encodings raw and
+ * gzip; little/big endian; attached data or one detached data file; "byte skip" >= 0.
+ * Anything else is rejected with a message naming the field (SRS FR-2, FR-3).
+ */
+public final class NrrdReader
+{
+    private static final String MAGIC = "NRRD000";
+    private static final int CHUNK = 1 << 20;
+    private static final int MAX_HEADER_BYTES = 1 << 16;
+
+    private NrrdReader()
+    {
+    }
+
+    // ===================================================================== ENTRY
+
+    /**
+     * Reads a volume from a .nrrd (attached) or .nhdr (detached) file.
+     *
+     * @param (File) file the NRRD file
+     * @return the volume
+     * @throws (IOException) on I/O errors or unsupported / malformed files
+     */
+    public static Volume read(File file) throws IOException
+    {
+        InputStream in = new BufferedInputStream(new FileInputStream(file));
+        try
+        {
+            Map<String, String> fields = readHeader(in, file.getName());
+            VoxelType type = parseType(require(fields, "type"));
+            int[] sizes = parseSizes(fields);
+            ByteOrder order = parseEndian(fields, type);
+            boolean gzip = parseEncoding(fields);
+            long byteSkip = parseByteSkip(fields);
+
+            InputStream data = in;
+            String dataFile = fields.get("data file");
+            if (dataFile == null)
+            {
+                dataFile = fields.get("datafile");
+            }
+            if (dataFile != null)
+            {
+                in.close();
+                File detached = resolveDataFile(file, dataFile);
+                in = new BufferedInputStream(new FileInputStream(detached));
+                data = in;
+            }
+            if (gzip)
+            {
+                data = new GZIPInputStream(data, CHUNK);
+            }
+            skipFully(data, byteSkip);
+
+            Volume volume = Volume.create(type, sizes[0], sizes[1], sizes[2]);
+            readSamples(data, volume, order);
+            return volume;
+        }
+        finally
+        {
+            in.close();
+        }
+    }
+
+    // ============================================================ BUILD PIPELINE
+
+    /**
+     * Reads header lines up to the empty line that separates header and data.
+     *
+     * @param (InputStream) in stream positioned at the file start
+     * @param (String) name file name for messages
+     * @return field name (lower case) to value
+     * @throws (IOException) if the file is not NRRD
+     */
+    private static Map<String, String> readHeader(InputStream in, String name) throws IOException
+    {
+        String magic = readLine(in);
+        if (magic == null || !magic.startsWith(MAGIC))
+        {
+            throw new IOException(name + ": not a NRRD file (missing NRRD000x magic)");
+        }
+        Map<String, String> fields = new HashMap<String, String>();
+        int headerBytes = magic.length();
+        while (true)
+        {
+            String line = readLine(in);
+            if (line == null || line.isEmpty())
+            {
+                // Empty line (or EOF for a detached header) ends the header.
+                break;
+            }
+            headerBytes += line.length();
+            if (headerBytes > MAX_HEADER_BYTES)
+            {
+                throw new IOException(name + ": header too long, file is probably corrupt");
+            }
+            if (line.startsWith("#"))
+            {
+                continue;
+            }
+            int sep = line.indexOf(": ");
+            if (sep < 0)
+            {
+                // "key:=value" lines are key/value comments, not fields.
+                continue;
+            }
+            String key = line.substring(0, sep).trim().toLowerCase(Locale.ROOT);
+            fields.put(key, line.substring(sep + 2).trim());
+        }
+        return fields;
+    }
+
+    /**
+     * @param (String) t NRRD type string
+     * @return matching voxel type
+     * @throws (IOException) for unsupported types (e.g. double, 64-bit)
+     */
+    private static VoxelType parseType(String t) throws IOException
+    {
+        String s = t.toLowerCase(Locale.ROOT).trim();
+        if (s.equals("signed char") || s.equals("int8") || s.equals("int8_t"))
+        {
+            return VoxelType.INT8;
+        }
+        if (s.equals("uchar") || s.equals("unsigned char") || s.equals("uint8") || s.equals("uint8_t"))
+        {
+            return VoxelType.UINT8;
+        }
+        if (s.equals("short") || s.equals("short int") || s.equals("signed short")
+                || s.equals("signed short int") || s.equals("int16") || s.equals("int16_t"))
+        {
+            return VoxelType.INT16;
+        }
+        if (s.equals("ushort") || s.equals("unsigned short") || s.equals("unsigned short int")
+                || s.equals("uint16") || s.equals("uint16_t"))
+        {
+            return VoxelType.UINT16;
+        }
+        if (s.equals("int") || s.equals("signed int") || s.equals("int32") || s.equals("int32_t"))
+        {
+            return VoxelType.INT32;
+        }
+        if (s.equals("uint") || s.equals("unsigned int") || s.equals("uint32") || s.equals("uint32_t"))
+        {
+            return VoxelType.UINT32;
+        }
+        if (s.equals("float"))
+        {
+            return VoxelType.FLOAT32;
+        }
+        throw new IOException("unsupported NRRD type: " + t);
+    }
+
+    /**
+     * @param (Map) fields header fields
+     * @return sizes {sx, sy, sz}
+     * @throws (IOException) unless dimension is 3 with 3 positive sizes
+     */
+    private static int[] parseSizes(Map<String, String> fields) throws IOException
+    {
+        String dim = require(fields, "dimension").trim();
+        if (!dim.equals("3"))
+        {
+            throw new IOException("unsupported NRRD dimension: " + dim + " (only 3D scalar volumes)");
+        }
+        String[] parts = require(fields, "sizes").trim().split("\\s+");
+        if (parts.length != 3)
+        {
+            throw new IOException("NRRD sizes must have 3 values, got: " + fields.get("sizes"));
+        }
+        int[] sizes = new int[3];
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                sizes[i] = Integer.parseInt(parts[i]);
+            }
+            catch (NumberFormatException e)
+            {
+                throw new IOException("bad NRRD size: " + parts[i]);
+            }
+            if (sizes[i] < 1 || sizes[i] >= Volume.MAX_SIZE)
+            {
+                throw new IOException("NRRD size " + sizes[i] + " outside supported range [1, "
+                        + Volume.MAX_SIZE + ")");
+            }
+        }
+        return sizes;
+    }
+
+    /**
+     * @param (Map) fields header fields
+     * @param (VoxelType) type voxel type (1-byte types need no endian field)
+     * @return byte order of the samples
+     * @throws (IOException) on an unknown or missing endian field
+     */
+    private static ByteOrder parseEndian(Map<String, String> fields, VoxelType type) throws IOException
+    {
+        String e = fields.get("endian");
+        if (e == null)
+        {
+            if (type.bytes() == 1)
+            {
+                return ByteOrder.LITTLE_ENDIAN;
+            }
+            throw new IOException("NRRD field 'endian' is required for multi-byte types");
+        }
+        e = e.trim().toLowerCase(Locale.ROOT);
+        if (e.equals("little"))
+        {
+            return ByteOrder.LITTLE_ENDIAN;
+        }
+        if (e.equals("big"))
+        {
+            return ByteOrder.BIG_ENDIAN;
+        }
+        throw new IOException("unsupported NRRD endian: " + e);
+    }
+
+    /**
+     * @param (Map) fields header fields
+     * @return true for gzip, false for raw
+     * @throws (IOException) for other encodings (ascii, hex, bzip2)
+     */
+    private static boolean parseEncoding(Map<String, String> fields) throws IOException
+    {
+        String enc = require(fields, "encoding").trim().toLowerCase(Locale.ROOT);
+        if (enc.equals("raw"))
+        {
+            return false;
+        }
+        if (enc.equals("gzip") || enc.equals("gz"))
+        {
+            return true;
+        }
+        throw new IOException("unsupported NRRD encoding: " + enc + " (raw and gzip only)");
+    }
+
+    /**
+     * @param (Map) fields header fields
+     * @return bytes to skip before the samples
+     * @throws (IOException) for "byte skip: -1" or bad numbers
+     */
+    private static long parseByteSkip(Map<String, String> fields) throws IOException
+    {
+        String s = fields.get("byte skip");
+        if (s == null)
+        {
+            s = fields.get("byteskip");
+        }
+        if (s == null)
+        {
+            return 0;
+        }
+        long skip;
+        try
+        {
+            skip = Long.parseLong(s.trim());
+        }
+        catch (NumberFormatException e)
+        {
+            throw new IOException("bad NRRD byte skip: " + s);
+        }
+        if (skip < 0)
+        {
+            throw new IOException("unsupported NRRD byte skip: " + s);
+        }
+        return skip;
+    }
+
+    /**
+     * @param (File) header the header file
+     * @param (String) dataFile value of the "data file" field
+     * @return the data file, resolved relative to the header's folder
+     * @throws (IOException) for multi-file data (LIST or format patterns)
+     */
+    private static File resolveDataFile(File header, String dataFile) throws IOException
+    {
+        if (dataFile.startsWith("LIST") || dataFile.contains("%"))
+        {
+            throw new IOException("unsupported NRRD data file (multi-file): " + dataFile);
+        }
+        File f = new File(dataFile);
+        if (!f.isAbsolute())
+        {
+            f = new File(header.getAbsoluteFile().getParentFile(), dataFile);
+        }
+        return f;
+    }
+
+    /**
+     * Fills the volume's typed array chunk by chunk, so peak memory is the volume plus 1 MB
+     * instead of twice the volume.
+     *
+     * @param (InputStream) in sample bytes
+     * @param (Volume) volume destination
+     * @param (ByteOrder) order sample byte order
+     * @throws (IOException) if the data ends early
+     */
+    private static void readSamples(InputStream in, Volume volume, ByteOrder order) throws IOException
+    {
+        int bytesPerVoxel = volume.type().bytes();
+        int total = volume.voxelCount();
+        int voxelsPerChunk = CHUNK / bytesPerVoxel;
+        byte[] chunk = new byte[voxelsPerChunk * bytesPerVoxel];
+        ByteBuffer buffer = ByteBuffer.wrap(chunk).order(order);
+
+        int done = 0;
+        while (done < total)
+        {
+            int n = Math.min(voxelsPerChunk, total - done);
+            readFully(in, chunk, n * bytesPerVoxel);
+            buffer.clear();
+            copyChunk(buffer, volume, done, n);
+            done += n;
+        }
+    }
+
+    // ========================================================= LOW-LEVEL HELPERS
+
+    /**
+     * @param (ByteBuffer) buffer chunk bytes in the file's byte order
+     * @param (Volume) volume destination
+     * @param (int) start first voxel index to fill
+     * @param (int) n number of voxels
+     */
+    private static void copyChunk(ByteBuffer buffer, Volume volume, int start, int n)
+    {
+        if (volume instanceof ByteVolume)
+        {
+            buffer.get(((ByteVolume) volume).data(), start, n);
+        }
+        else if (volume instanceof ShortVolume)
+        {
+            buffer.asShortBuffer().get(((ShortVolume) volume).data(), start, n);
+        }
+        else if (volume instanceof IntVolume)
+        {
+            buffer.asIntBuffer().get(((IntVolume) volume).data(), start, n);
+        }
+        else
+        {
+            buffer.asFloatBuffer().get(((FloatVolume) volume).data(), start, n);
+        }
+    }
+
+    /**
+     * @param (Map) fields header fields
+     * @param (String) key required field name
+     * @return its value
+     * @throws (IOException) if missing
+     */
+    private static String require(Map<String, String> fields, String key) throws IOException
+    {
+        String v = fields.get(key);
+        if (v == null)
+        {
+            throw new IOException("NRRD header is missing required field '" + key + "'");
+        }
+        return v;
+    }
+
+    /**
+     * Reads one header line byte by byte (a Reader would buffer past the header into the data).
+     *
+     * @param (InputStream) in stream
+     * @return line without the line terminator, or null at end of stream
+     * @throws (IOException) on I/O errors
+     */
+    private static String readLine(InputStream in) throws IOException
+    {
+        ByteArrayOutputStream line = new ByteArrayOutputStream();
+        int b = in.read();
+        if (b < 0)
+        {
+            return null;
+        }
+        while (b >= 0 && b != '\n')
+        {
+            if (b != '\r')
+            {
+                line.write(b);
+            }
+            b = in.read();
+        }
+        return line.toString("ISO-8859-1");
+    }
+
+    /**
+     * @param (InputStream) in stream
+     * @param (byte[]) buf destination
+     * @param (int) len bytes to read
+     * @throws (IOException) if the stream ends first
+     */
+    private static void readFully(InputStream in, byte[] buf, int len) throws IOException
+    {
+        int off = 0;
+        while (off < len)
+        {
+            int r = in.read(buf, off, len - off);
+            if (r < 0)
+            {
+                throw new EOFException("NRRD data ended early (file truncated or sizes wrong)");
+            }
+            off += r;
+        }
+    }
+
+    /**
+     * @param (InputStream) in stream
+     * @param (long) n bytes to skip
+     * @throws (IOException) if the stream ends first
+     */
+    private static void skipFully(InputStream in, long n) throws IOException
+    {
+        long left = n;
+        while (left > 0)
+        {
+            long s = in.skip(left);
+            if (s <= 0)
+            {
+                if (in.read() < 0)
+                {
+                    throw new EOFException("NRRD byte skip goes past end of data");
+                }
+                s = 1;
+            }
+            left -= s;
+        }
+    }
+}
