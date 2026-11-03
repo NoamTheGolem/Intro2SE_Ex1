@@ -1,0 +1,4 @@
+rootProject.name = 'Ex1-PlaneProjection'
+// core: pure Java, no desktop APIs -> reusable from an Android module later.
+// app : desktop I/O (NRRD, CSV, ffmpeg/PNG) and the Ex0 demo.
+include 'core', 'app'
