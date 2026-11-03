@@ -130,4 +130,15 @@ public class PlaneTest
         assertFalse(Plane.triangle(new Vec3(0, 0, 0), new Vec3(-1e9, 1e9, 0), new Vec3(1e9, 1e9, 0)).isRenderable());
         assertFalse(Plane.triangle(new Vec3(Double.NaN, 0, 0), new Vec3(0, 1, 0), new Vec3(1, 1, 0)).isRenderable());
     }
+
+    @Test
+    public void crossedRailsAreRejected()
+    {
+        // Equal "rails" that are the diagonals of a rectangle: a bow-tie, not a trapezoid.
+        Plane p = Plane.trapezoid(new Vec3(0, 0, 0), new Vec3(10, 0, 0), new Vec3(10, 20, 0), new Vec3(0, 20, 0));
+        assertTrue(p.validate(EPS).toString().contains("cross"));
+        // The same points as a proper rectangle are fine.
+        assertTrue(Plane.trapezoid(new Vec3(0, 0, 0), new Vec3(10, 0, 0), new Vec3(0, 20, 0), new Vec3(10, 20, 0))
+                .validate(EPS).isEmpty());
+    }
 }

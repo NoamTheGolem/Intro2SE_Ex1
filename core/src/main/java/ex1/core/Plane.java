@@ -128,6 +128,10 @@ public final class Plane
                 errors.add(String.format("points are not coplanar (c is %.4f from plane a1,a2,b)",
                         distanceOfCFromPlane()));
             }
+            else if (railsCross())
+            {
+                errors.add("rails a1->b and a2->c cross each other (the four points do not form a trapezoid)");
+            }
         }
         return errors;
     }
@@ -258,6 +262,64 @@ public final class Plane
             return 0.0;
         }
         return Math.abs(c.sub(a1).dot(normal.normalized()));
+    }
+
+    /**
+     * A trapezoid is a simple quadrilateral: its two rails must not intersect. Tested in the 2-D
+     * coordinates of the plane itself (axes: bottom edge direction and its in-plane normal).
+     *
+     * @return true when segment a1->b intersects segment a2->c
+     */
+    private boolean railsCross()
+    {
+        Vec3 ex = c.sub(b);
+        if (ex.length() < 1e-9)
+        {
+            ex = a2.sub(a1);
+        }
+        if (ex.length() < 1e-9)
+        {
+            return false;
+        }
+        ex = ex.normalized();
+        Vec3 normal = ex.cross(b.sub(a1));
+        if (normal.length() < 1e-9)
+        {
+            return false;
+        }
+        Vec3 ey = normal.normalized().cross(ex);
+        double[] p1 = {a1.sub(a1).dot(ex), a1.sub(a1).dot(ey)};
+        double[] p2 = {b.sub(a1).dot(ex), b.sub(a1).dot(ey)};
+        double[] p3 = {a2.sub(a1).dot(ex), a2.sub(a1).dot(ey)};
+        double[] p4 = {c.sub(a1).dot(ex), c.sub(a1).dot(ey)};
+        return segmentsIntersect(p1, p2, p3, p4);
+    }
+
+    /**
+     * @param (double[]) p segment 1 start
+     * @param (double[]) q segment 1 end
+     * @param (double[]) r segment 2 start
+     * @param (double[]) s segment 2 end
+     * @return true when the open segments p-q and r-s properly intersect
+     */
+    private static boolean segmentsIntersect(double[] p, double[] q, double[] r, double[] s)
+    {
+        double d1 = cross2(r, s, p);
+        double d2 = cross2(r, s, q);
+        double d3 = cross2(p, q, r);
+        double d4 = cross2(p, q, s);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+
+    /**
+     * @param (double[]) a line start
+     * @param (double[]) b line end
+     * @param (double[]) p point
+     * @return 2-D cross product (b - a) x (p - a)
+     */
+    private static double cross2(double[] a, double[] b, double[] p)
+    {
+        return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     }
 
     /**
