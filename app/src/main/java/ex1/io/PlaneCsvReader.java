@@ -207,7 +207,7 @@ public final class PlaneCsvReader
             warnings.add("not a list of numbers: \"" + text + "\" -> black frame");
             return new Entry(row, lineNo, null, warnings);
         }
-        double[] coords = coordinates(values);
+        double[] coords = coordinates(values, warnings);
         if (coords == null)
         {
             warnings.add("expected \"3, 9 numbers\", \"4, 12 numbers\", 9 numbers or 12 numbers, got "
@@ -237,26 +237,47 @@ public final class PlaneCsvReader
     }
 
     /**
-     * Strips the optional leading point count of the course format.
+     * Strips the optional leading point count of the course format and tolerates the usual
+     * spreadsheet artefacts: a 3-point row whose unused x4,y4,z4 cells hold zeros (13 numbers),
+     * and a count that disagrees with the number of points given.
      *
      * @param (double[]) v all numbers of the row
+     * @param (List) warnings receives a note when the row was repaired
      * @return the 9 or 12 coordinates, or null when the count does not fit any format
      */
-    private static double[] coordinates(double[] v)
+    private static double[] coordinates(double[] v, List<String> warnings)
     {
-        if (v.length == 1 + TRIANGLE_POINTS * COORDS && v[0] == TRIANGLE_POINTS)
-        {
-            return tail(v);
-        }
-        if (v.length == 1 + TRAPEZOID_POINTS * COORDS && v[0] == TRAPEZOID_POINTS)
-        {
-            return tail(v);
-        }
-        if (v.length == TRIANGLE_POINTS * COORDS || v.length == TRAPEZOID_POINTS * COORDS)
+        int triangleCoords = TRIANGLE_POINTS * COORDS;
+        int trapezoidCoords = TRAPEZOID_POINTS * COORDS;
+        if (v.length == triangleCoords || v.length == trapezoidCoords)
         {
             return v;
         }
-        return null;
+        if (v.length != 1 + triangleCoords && v.length != 1 + trapezoidCoords)
+        {
+            return null;
+        }
+        int count = (int) v[0];
+        double[] rest = tail(v);
+        if (v[0] != count || (count != TRIANGLE_POINTS && count != TRAPEZOID_POINTS))
+        {
+            warnings.add("first cell " + v[0] + " is not a point count of 3 or 4; using the "
+                    + (rest.length / COORDS) + " points that follow");
+            return rest;
+        }
+        if (count == TRIANGLE_POINTS && rest.length == trapezoidCoords)
+        {
+            // "3" followed by 12 numbers: the spreadsheet filled x4,y4,z4 (usually with zeros).
+            warnings.add("count is 3 but 4 points are given; the 4th point is ignored");
+            double[] first = new double[triangleCoords];
+            System.arraycopy(rest, 0, first, 0, triangleCoords);
+            return first;
+        }
+        if (count == TRAPEZOID_POINTS && rest.length == triangleCoords)
+        {
+            warnings.add("count is 4 but only 3 points are given; read as a triangle");
+        }
+        return rest;
     }
 
     /**

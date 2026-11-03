@@ -122,7 +122,7 @@ assertions in the code; this table is the index a reviewer reads first.
 | TC-40 | `readsCourseExampleFile` | REQ-04 | the course file verbatim (quotes, count column, empty cells) → 4 rows, shapes 3/4/3/4, coordinates intact |
 | TC-41 | `readsPlainTrianglesAndTrapezoids` | REQ-04 | 9- and 12-number rows, spaces as separators → 2 rows, line numbers kept |
 | TC-42 | `skipsHeaderCommentsBlankAndEmptySpreadsheetRows` | REQ-04 | BOM + header + `#` + blank + `,,,,` → 1 row at line 5 |
-| TC-43 | `countColumnMustMatch` | REQ-04 | `4,` + 9 numbers → black frame |
+| TC-43 | `countColumnDisagreementsAreRepairedWithANote` | REQ-04, REQ-07 | `3,`+12 numbers → 4th point ignored; `4,`+9 numbers → triangle; `5,`+9 → points used, note; 11 numbers → black frame |
 | TC-44 | `courseFileRow3IsWarnedButProjectedAndRow4IsReadAsRails` | REQ-05, REQ-07 | row 3 warned + plane kept; row 4 one note, valid; messages start with "row 3 (line 4):" |
 | TC-45 | `badRowsBecomeBlackFramesInPlace` | REQ-07 | `1,2,3,4` and `abc` between good rows → null planes **in place**, 4 rows total |
 | TC-46 | `degeneratePlaneIsBlackFrame` | REQ-07 | all points equal → black frame, file still valid |

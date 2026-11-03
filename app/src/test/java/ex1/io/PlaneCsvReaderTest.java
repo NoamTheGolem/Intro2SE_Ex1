@@ -110,11 +110,23 @@ public class PlaneCsvReaderTest
     }
 
     @Test
-    public void countColumnMustMatch() throws IOException
+    public void countColumnDisagreementsAreRepairedWithANote() throws IOException
     {
-        // "4" followed by 9 coordinates: neither format -> black frame.
-        PlaneCsvReader.Result r = read(TRIANGLE + "\n4," + TRIANGLE + "\n");
-        assertNull(r.rows.get(1).plane);
+        // "3" + 12 numbers (unused cells filled with zeros): 4th point ignored.
+        PlaneCsvReader.Result r = read("3," + TRIANGLE + ",0,0,0\n4," + TRIANGLE + "\n5," + TRIANGLE + "\n");
+        assertNotNull(r.rows.get(0).plane);
+        assertTrue(r.rows.get(0).plane.isTriangle());
+        assertTrue(r.rows.get(0).warnings.get(0).contains("4th point is ignored"));
+        // "4" + 9 numbers: read as a triangle.
+        assertNotNull(r.rows.get(1).plane);
+        assertTrue(r.rows.get(1).plane.isTriangle());
+        assertTrue(r.rows.get(1).warnings.get(0).contains("read as a triangle"));
+        // "5" + 9 numbers: not a count; the points are used anyway.
+        assertNotNull(r.rows.get(2).plane);
+        assertTrue(r.rows.get(2).warnings.get(0).contains("not a point count"));
+        // Something that fits no format at all is still a black frame.
+        PlaneCsvReader.Result bad = read(TRIANGLE + "\n1,2,3,4,5,6,7,8,9,10,11\n");
+        assertNull(bad.rows.get(1).plane);
     }
 
     @Test
