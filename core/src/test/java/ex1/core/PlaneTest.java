@@ -141,4 +141,43 @@ public class PlaneTest
         assertTrue(Plane.trapezoid(new Vec3(0, 0, 0), new Vec3(10, 0, 0), new Vec3(0, 20, 0), new Vec3(10, 20, 0))
                 .validate(EPS).isEmpty());
     }
+
+    @Test
+    public void topNotParallelToBaseIsDoubtfulButDrawn()
+    {
+        // edge_cases.csv frame 8 in the course order: equal legs of 130, a2 16 lower than a1.
+        Plane p = Plane.trapezoid(new Vec3(100, 40, 150), new Vec3(100, 112, 134),
+                new Vec3(100, -10, 30), new Vec3(100, 190, 30));
+        assertTrue(p.validate(EPS).toString(), p.validate(EPS).toString().contains("not parallel"));
+        assertTrue(p.isRenderable());
+    }
+
+    @Test
+    public void nonCoplanarCollinearAndHugePlanesAreBad()
+    {
+        // edge_cases.csv frames 12, 13, 14, 16.
+        Plane same = Plane.triangle(new Vec3(99.5, 0, 80), new Vec3(150, 179, 80), new Vec3(150, 179, 80));
+        Plane line = Plane.triangle(new Vec3(0, 0, 80), new Vec3(100, 90, 80), new Vec3(200, 180, 80));
+        Plane lifted = Plane.trapezoid(new Vec3(30, 20, 20), new Vec3(169, 20, 30), new Vec3(0, 160, 20),
+                new Vec3(199, 160, 20));
+        Plane huge = Plane.triangle(new Vec3(99.5, 0, 80), new Vec3(-5000, 179, 80), new Vec3(5199, 179, 80));
+        assertFalse(same.isRenderable());
+        assertTrue(same.whyNotRenderable().contains("collinear"));
+        assertFalse(line.isRenderable());
+        assertFalse(lifted.isRenderable());
+        assertTrue(lifted.whyNotRenderable().contains("not on one plane"));
+        assertFalse(huge.isRenderable());
+        assertTrue(huge.whyNotRenderable().contains("10200"));
+        // A valid plane outside the volume is still renderable (it is simply black).
+        assertTrue(Plane.triangle(new Vec3(99.5, 0, 300), new Vec3(0, 179, 300), new Vec3(199, 179, 300)).isRenderable());
+    }
+
+    @Test
+    public void bowTieWhoseBasesCrossIsBad()
+    {
+        // Rails do not touch, but the top a1-a2 and the base b-c cross.
+        Plane p = Plane.trapezoid(new Vec3(0, 0, 0), new Vec3(10, 20, 0), new Vec3(0, 20, 0), new Vec3(10, 0, 0));
+        assertFalse(p.isRenderable());
+        assertEquals("the sides cross each other", p.whyNotRenderable());
+    }
 }

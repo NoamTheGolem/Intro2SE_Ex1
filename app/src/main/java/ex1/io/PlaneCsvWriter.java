@@ -8,15 +8,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Locale;
 
 /**
- * Writes planes in the course's CSV format (the one Ex0.csv uses): a header row, then
- * "N, x1,y1,z1, x2,y2,z2, x3,y3,z3[, x4,y4,z4]" with N = 3 or 4. Files written here are read
- * back by {@link PlaneCsvReader} and by the Ex0 demo, so a sequence built in the app can be
- * rendered from the command line too.
+ * Writes planes in the course's CSV format (the one Ex0.csv and the lecturer's data set use): a
+ * header row, then "N, x1,y1,z1, x2,y2,z2, x3,y3,z3[, x4,y4,z4]" with N = 3 or 4, points in the
+ * course order: (a, b, c) for a triangle and (a1, b, a2, c) for a trapezoid, i.e. the two rails
+ * one after the other (see {@link ex1.core.PlaneResolver}). Files written here are read back by
+ * {@link PlaneCsvReader} and by the Ex0 demo, so a sequence built in the app can be rendered from
+ * the command line too.
  */
 public final class PlaneCsvWriter
 {
@@ -72,9 +74,9 @@ public final class PlaneCsvWriter
             sb.append("4,");
             append(sb, p.a1().x, p.a1().y, p.a1().z);
             sb.append(',');
-            append(sb, p.a2().x, p.a2().y, p.a2().z);
-            sb.append(',');
             append(sb, p.b().x, p.b().y, p.b().z);
+            sb.append(',');
+            append(sb, p.a2().x, p.a2().y, p.a2().z);
             sb.append(',');
             append(sb, p.c().x, p.c().y, p.c().z);
         }
@@ -82,10 +84,11 @@ public final class PlaneCsvWriter
     }
 
     /**
-     * Rounds a plane to the precision {@link #row(Plane)} writes, so that what is rendered is
-     * exactly what a reader of the CSV will render: a video exported from quantized planes and a
-     * video rendered by Ex0 from the saved CSV are identical byte for byte (nearest-neighbour
-     * sampling would otherwise flip at voxel boundaries for differences far below EPS).
+     * The plane exactly as a reader of the written CSV will see it, so that what the app renders
+     * is what Ex0 renders from the saved file: a video exported from these planes and a video
+     * rendered by Ex0 from the CSV are identical byte for byte (nearest-neighbour sampling would
+     * flip at voxel boundaries for differences far below EPS). With the exact number format this
+     * returns an equal plane; it stays as the one place that guarantees it.
      *
      * @param (Plane) p plane
      * @return the same plane with every coordinate rounded to the written precision
@@ -133,13 +136,11 @@ public final class PlaneCsvWriter
         {
             return Long.toString((long) v);
         }
-        String text = String.format(Locale.ROOT, "%.6f", v);
-        // Trim trailing zeros but keep enough digits for the EPS = 0.001 rules to survive a round trip.
-        text = text.replaceAll("0+$", "");
-        if (text.endsWith("."))
-        {
-            text = text.substring(0, text.length() - 1);
-        }
-        return text;
+        // The shortest decimal that reads back as exactly the same double (Double.toString), in
+        // plain notation. Exact, so a plane survives the round trip bit for bit: the lecturer's
+        // 8-decimal rows come back unchanged and interpolated planes keep every rule of EPS.
+        // (A first version printed 3 decimals; that moved an oblique trapezoid's rails apart by
+        // 0.001 = EPS and the row read back as a different shape.)
+        return new BigDecimal(Double.toString(v)).toPlainString();
     }
 }

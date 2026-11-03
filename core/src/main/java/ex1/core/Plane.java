@@ -8,7 +8,17 @@ import java.util.List;
  * the right rail runs a2 -> c. An isosceles triangle (a, b, c) is the special case a1 = a2 = a,
  * so the rest of the program only ever handles trapezoids.
  *
- * See docs/ALGORITHM.md §3 and §6.
+ * Two levels of "wrong" (ALGORITHM.md §6, ADR-0003), as the course's edge-case file expects:
+ * <ul>
+ *   <li>{@link #validate} lists every broken rule. A plane that only breaks the shape rules
+ *       (sides of different length, top not parallel to the base, top wider than the base) is
+ *       <em>doubtful</em>: the algorithm is still well defined, so it is drawn as given, with a
+ *       warning.</li>
+ *   <li>{@link #isRenderable} is false for a <em>bad</em> plane: non-finite numbers, a rail of
+ *       length 0, collinear points, four points that are not coplanar, sides that cross, or an
+ *       image too large to allocate. Such a plane becomes a black frame, with a warning
+ *       ({@link #whyNotRenderable} says why).</li>
+ * </ul>
  */
 public final class Plane
 {
@@ -132,8 +142,63 @@ public final class Plane
             {
                 errors.add("rails a1->b and a2->c cross each other (the four points do not form a trapezoid)");
             }
+            else if (topAndBaseCross())
+            {
+                errors.add("top a1a2 and base bc cross each other (the four points do not form a trapezoid)");
+            }
+            else if (topOffParallel() >= eps)
+            {
+                errors.add(String.format("top a1a2 is not parallel to base bc (a2 is %.4f off the parallel through a1)",
+                        topOffParallel()));
+            }
         }
         return errors;
+    }
+
+    /**
+     * Why the algorithm cannot draw this plane at all (a "bad" plane, black frame).
+     *
+     * @return the reason, or null when the plane is renderable
+     */
+    public String whyNotRenderable()
+    {
+        if (!isFinite())
+        {
+            return "coordinates must be finite numbers";
+        }
+        double left = a1.dist(b);
+        double right = a2.dist(c);
+        if (left <= 0.0 || right <= 0.0)
+        {
+            return "a side has length 0";
+        }
+        if (triangle)
+        {
+            Vec3 normal = b.sub(a1).cross(c.sub(a1));
+            if (normal.length() < DEFAULT_EPS * Math.max(1.0, left * left))
+            {
+                return "points a, b, c are collinear (no plane)";
+            }
+        }
+        else
+        {
+            if (distanceOfCFromPlane() >= DEFAULT_EPS * Math.max(1.0, left))
+            {
+                return String.format("the four points are not on one plane (c is %.4f from plane a1,a2,b)",
+                        distanceOfCFromPlane());
+            }
+            if (railsCross() || topAndBaseCross())
+            {
+                return "the sides cross each other";
+            }
+        }
+        double sides = Math.max(left, Math.max(a1.dist(a2), b.dist(c)));
+        if (sides >= MAX_IMAGE_SIDE)
+        {
+            return String.format("the image would be %d pixels wide or high (limit %d)",
+                    (long) Math.floor(sides) + 1, (long) MAX_IMAGE_SIDE);
+        }
+        return null;
     }
 
     /**
@@ -166,24 +231,16 @@ public final class Plane
     }
 
     /**
-     * Whether the projection algorithm can run on this plane at all: finite coordinates, both
-     * rails longer than 0, and an output image of sane size. A plane can be renderable without
-     * being valid (e.g. not isosceles); then the algorithm still has a well-defined result.
+     * Whether the projection algorithm can draw this plane: finite coordinates, rails longer than
+     * 0, a real plane (not collinear, four points coplanar, sides not crossing) and an output
+     * image of sane size. A plane can be renderable without being valid (e.g. not isosceles);
+     * then the algorithm still has a well-defined result and the plane is drawn as given.
      *
      * @return true when project() may be called
      */
     public boolean isRenderable()
     {
-        if (!isFinite())
-        {
-            return false;
-        }
-        if (a1.dist(b) <= 0.0 || a2.dist(c) <= 0.0)
-        {
-            return false;
-        }
-        double sides = Math.max(a1.dist(b), Math.max(a1.dist(a2), b.dist(c)));
-        return sides < MAX_IMAGE_SIDE;
+        return whyNotRenderable() == null;
     }
 
     /**
@@ -272,6 +329,70 @@ public final class Plane
      */
     private boolean railsCross()
     {
+        if (triangle)
+        {
+            return false;
+        }
+        double[][] p = inPlane();
+        if (p == null)
+        {
+            return false;
+        }
+        return segmentsIntersect(p[0], p[1], p[2], p[3]);
+    }
+
+    /**
+     * The top a1-a2 and the base b-c of a trapezoid must not cross either (a "bow-tie" whose
+     * rails do not touch but whose bases do).
+     *
+     * @return true when segment a1->a2 intersects segment b->c
+     */
+    private boolean topAndBaseCross()
+    {
+        if (triangle)
+        {
+            return false;
+        }
+        double[][] p = inPlane();
+        if (p == null)
+        {
+            return false;
+        }
+        return segmentsIntersect(p[0], p[2], p[1], p[3]);
+    }
+
+    /**
+     * How far a2 is from the parallel to the base through a1, measured in the plane: 0 for a real
+     * trapezoid (top parallel to the base, pointing the same way).
+     *
+     * @return distance in voxel units (0 for a triangle or a top of length 0)
+     */
+    private double topOffParallel()
+    {
+        Vec3 top = a2.sub(a1);
+        Vec3 base = c.sub(b);
+        if (top.length() < 1e-9 || base.length() < 1e-9)
+        {
+            return 0.0;
+        }
+        Vec3 dir = base.normalized();
+        double along = top.dot(dir);
+        if (along < 0)
+        {
+            // Top pointing against the base: the shape is twisted, the whole top is "off".
+            return top.length();
+        }
+        return top.sub(dir.scale(along)).length();
+    }
+
+    /**
+     * The four points in 2-D coordinates of the plane (axes: base direction and its in-plane
+     * normal), in the order a1, b, a2, c.
+     *
+     * @return four 2-D points, or null when the plane is degenerate
+     */
+    private double[][] inPlane()
+    {
         Vec3 ex = c.sub(b);
         if (ex.length() < 1e-9)
         {
@@ -279,20 +400,27 @@ public final class Plane
         }
         if (ex.length() < 1e-9)
         {
-            return false;
+            return null;
         }
         ex = ex.normalized();
         Vec3 normal = ex.cross(b.sub(a1));
         if (normal.length() < 1e-9)
         {
-            return false;
+            normal = ex.cross(c.sub(a2));
+        }
+        if (normal.length() < 1e-9)
+        {
+            return null;
         }
         Vec3 ey = normal.normalized().cross(ex);
-        double[] p1 = {a1.sub(a1).dot(ex), a1.sub(a1).dot(ey)};
-        double[] p2 = {b.sub(a1).dot(ex), b.sub(a1).dot(ey)};
-        double[] p3 = {a2.sub(a1).dot(ex), a2.sub(a1).dot(ey)};
-        double[] p4 = {c.sub(a1).dot(ex), c.sub(a1).dot(ey)};
-        return segmentsIntersect(p1, p2, p3, p4);
+        Vec3[] pts = {a1, b, a2, c};
+        double[][] out = new double[4][];
+        for (int i = 0; i < pts.length; i++)
+        {
+            Vec3 d = pts[i].sub(a1);
+            out[i] = new double[] {d.dot(ex), d.dot(ey)};
+        }
+        return out;
     }
 
     /**

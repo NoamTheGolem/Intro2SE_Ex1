@@ -2,13 +2,10 @@ package ex1.app;
 
 import ex1.core.Plane;
 import ex1.core.Vec3;
+import ex1.io.PlaneCsvWriter;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -75,20 +72,9 @@ public final class SweepGenerator
      */
     static void write(String mode, double sx, double sy, double sz, int count, File out) throws IOException
     {
-        PrintWriter w = new PrintWriter(new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8));
-        try
-        {
-            w.println("# Ex1 planes, mode=" + mode + ", volume " + (int) sx + "x" + (int) sy + "x" + (int) sz);
-            List<Plane> planes = generate(mode, sx, sy, sz, count);
-            for (int i = 0; i < planes.size(); i++)
-            {
-                w.println(csvRow(planes.get(i)));
-            }
-        }
-        finally
-        {
-            w.close();
-        }
+        // Same format as the course's files (header, point count, a1,b,a2,c order), so the
+        // generated lists can be opened in the app or a spreadsheet next to the lecturer's.
+        PlaneCsvWriter.write(generate(mode, sx, sy, sz, count), out);
     }
 
     /**
@@ -196,34 +182,5 @@ public final class SweepGenerator
             return 0.0;
         }
         return i / (double) (count - 1);
-    }
-
-    /**
-     * @param (Plane) p plane
-     * @return CSV row of 9 or 12 numbers
-     */
-    private static String csvRow(Plane p)
-    {
-        StringBuilder sb = new StringBuilder();
-        append(sb, p.a1());
-        if (!p.isTriangle())
-        {
-            sb.append(',');
-            append(sb, p.a2());
-        }
-        sb.append(',');
-        append(sb, p.b());
-        sb.append(',');
-        append(sb, p.c());
-        return sb.toString();
-    }
-
-    /**
-     * @param (StringBuilder) sb destination
-     * @param (Vec3) v point
-     */
-    private static void append(StringBuilder sb, Vec3 v)
-    {
-        sb.append(String.format(Locale.ROOT, "%.6f,%.6f,%.6f", v.x, v.y, v.z));
     }
 }

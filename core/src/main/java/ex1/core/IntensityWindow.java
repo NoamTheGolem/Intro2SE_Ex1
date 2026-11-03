@@ -10,6 +10,7 @@ public final class IntensityWindow
     public static final double DEFAULT_HIGH_PERCENTILE = 99.5;
 
     private static final int MAX_SAMPLES = 2_000_000;
+    private static final int FEW_VALUES = 16;
     private static final int BINS = 4096;
     private static final int GREY_MAX = 255;
 
@@ -80,6 +81,13 @@ public final class IntensityWindow
                 bin = BINS - 1;
             }
             hist[bin]++;
+        }
+        if (occupiedBins(hist) <= FEW_VALUES)
+        {
+            // Synthetic or labelled data (a die, phantoms): a handful of values that must all stay
+            // distinguishable, so the whole range is used. Percentiles would map a small bright
+            // class (the pips of a die) to the same white as the large class around it.
+            return new IntensityWindow(min, max);
         }
         double lo = valueAtPercentile(hist, samples, lowPercentile, min, binWidth);
         double hi = valueAtPercentile(hist, samples, highPercentile, min, binWidth) + binWidth;
@@ -180,5 +188,22 @@ public final class IntensityWindow
             }
         }
         return min + hist.length * binWidth;
+    }
+
+    /**
+     * @param (long[]) hist histogram
+     * @return number of bins holding at least one sample
+     */
+    private static int occupiedBins(long[] hist)
+    {
+        int n = 0;
+        for (int i = 0; i < hist.length; i++)
+        {
+            if (hist[i] > 0)
+            {
+                n++;
+            }
+        }
+        return n;
     }
 }

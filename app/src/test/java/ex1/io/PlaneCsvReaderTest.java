@@ -14,8 +14,8 @@ import java.io.StringReader;
 import org.junit.Test;
 
 /**
- * CSV rules (SRS FR-4, FR-5, decision D11): the course's Ex0.csv format, the plain format,
- * one entry per row, warnings instead of aborts.
+ * CSV rules (SRS REQ-04, REQ-05, REQ-07, ADR-0003): the course's Ex0.csv format, the plain
+ * format, one entry per row, doubtful rows drawn with a warning, bad rows black with a warning.
  */
 public class PlaneCsvReaderTest
 {
@@ -55,20 +55,21 @@ public class PlaneCsvReaderTest
     }
 
     @Test
-    public void courseFileRow3IsWarnedButProjectedAndRow4IsReadAsRails() throws IOException
+    public void courseFileRow3IsDoubtfulAndRow4IsAValidTrapezoid() throws IOException
     {
         PlaneCsvReader.Result r = read(COURSE_CSV);
         assertTrue(r.rows.get(0).warnings.isEmpty());
         assertTrue(r.rows.get(1).warnings.isEmpty());
-        // Row 3: |ab| = 497.39, |ac| = 476.86 in every reading -> warned, still projected.
+        // Row 3: |ab| = 497.39, |ac| = 476.86 -> warned, drawn as given.
         assertTrue(r.rows.get(2).warnings.get(0).contains("side lengths differ"));
+        assertTrue(r.rows.get(2).warnings.get(1).contains("drawn as given"));
         assertNotNull(r.rows.get(2).plane);
-        // Row 4: not isosceles as (a1,a2,b,c) but a valid trapezoid as rails (p1->p2, p3->p4).
-        assertEquals(1, r.rows.get(3).warnings.size());
-        assertTrue(r.rows.get(3).warnings.get(0).contains("read as two rails"));
+        // Row 4: in the course order (a1, b, a2, c) a perfect isosceles trapezoid, no warning.
+        assertTrue(r.rows.get(3).warnings.toString(), r.rows.get(3).warnings.isEmpty());
         assertNotNull(r.rows.get(3).plane);
         assertTrue(r.rows.get(3).plane.validate(Plane.DEFAULT_EPS).isEmpty());
         assertEquals(4, r.planes().size());
+        assertEquals(2, r.warnings().size());
         assertTrue(r.warnings().get(0).startsWith("row 3 (line 4):"));
         assertEquals(3, r.rows.get(2).row);
         assertEquals(4, r.rows.get(2).line);
@@ -110,23 +111,37 @@ public class PlaneCsvReaderTest
     }
 
     @Test
-    public void countColumnDisagreementsAreRepairedWithANote() throws IOException
+    public void countMustMatchThePointsGiven() throws IOException
     {
-        // "3" + 12 numbers (unused cells filled with zeros): 4th point ignored.
-        PlaneCsvReader.Result r = read("3," + TRIANGLE + ",0,0,0\n4," + TRIANGLE + "\n5," + TRIANGLE + "\n");
+        // As in edge_cases.csv frame 9: "4" with the 9 numbers of a triangle is a bad row.
+        PlaneCsvReader.Result r = read(TRIANGLE + "\n4," + TRIANGLE + "\n3," + TRIANGLE + ",0,0,0\n5," + TRIANGLE + "\n");
         assertNotNull(r.rows.get(0).plane);
-        assertTrue(r.rows.get(0).plane.isTriangle());
-        assertTrue(r.rows.get(0).warnings.get(0).contains("4th point is ignored"));
-        // "4" + 9 numbers: read as a triangle.
-        assertNotNull(r.rows.get(1).plane);
-        assertTrue(r.rows.get(1).plane.isTriangle());
-        assertTrue(r.rows.get(1).warnings.get(0).contains("read as a triangle"));
-        // "5" + 9 numbers: not a count; the points are used anyway.
-        assertNotNull(r.rows.get(2).plane);
-        assertTrue(r.rows.get(2).warnings.get(0).contains("not a point count"));
-        // Something that fits no format at all is still a black frame.
+        assertNull(r.rows.get(1).plane);
+        assertTrue(r.rows.get(1).warnings.get(0), r.rows.get(1).warnings.get(0).contains("the count says 4 points but 3"));
+        assertNull(r.rows.get(2).plane);
+        assertTrue(r.rows.get(2).warnings.get(0).contains("the count says 3 points but 4"));
+        assertNull(r.rows.get(3).plane);
+        // Something that fits no format at all is a black frame too.
         PlaneCsvReader.Result bad = read(TRIANGLE + "\n1,2,3,4,5,6,7,8,9,10,11\n");
         assertNull(bad.rows.get(1).plane);
+        assertTrue(bad.rows.get(1).warnings.get(0).contains("got 11 numbers"));
+    }
+
+    @Test
+    public void lecturerEdgeCasesGiveTheExpectedFrames() throws IOException
+    {
+        java.io.File f = new java.io.File("data/course/edge_cases.csv");
+        PlaneCsvReader.Result r = PlaneCsvReader.read(f, Plane.DEFAULT_EPS);
+        assertTrue(r.errors.toString(), r.isValid());
+        // "Expected: 16 frames; black: frames 6, 9 to 16; a warning for frames 7 to 16."
+        assertEquals(16, r.rows.size());
+        for (int i = 0; i < 16; i++)
+        {
+            int frame = i + 1;
+            PlaneCsvReader.Entry e = r.rows.get(i);
+            assertEquals("frame " + frame + " drawn", frame <= 8, e.plane != null);
+            assertEquals("frame " + frame + " warned: " + e.warnings, frame >= 7, !e.warnings.isEmpty());
+        }
     }
 
     @Test
@@ -153,6 +168,11 @@ public class PlaneCsvReaderTest
         Plane original = spec.toPlane();
         assertTrue(original.validate(Plane.DEFAULT_EPS).toString(), original.validate(Plane.DEFAULT_EPS).isEmpty());
         String row = ex1.io.PlaneCsvWriter.row(original);
+        // Course order: a1, b, a2, c (the second point written is b).
+        String[] cells = row.split(",");
+        assertEquals("4", cells[0]);
+        assertEquals(original.b().x, Double.parseDouble(cells[4]), 1e-6);
+        assertEquals(original.a2().z, Double.parseDouble(cells[9]), 1e-6);
         PlaneCsvReader.Result r = read(row + "\n");
         assertTrue(r.rows.get(0).warnings.toString(), r.rows.get(0).warnings.isEmpty());
         assertEquals(original.imageWidth(), r.rows.get(0).plane.imageWidth());
@@ -163,5 +183,25 @@ public class PlaneCsvReaderTest
         PlaneCsvReader.Result t = read(ex1.io.PlaneCsvWriter.row(tri.toPlane()) + "\n");
         assertTrue(t.rows.get(0).warnings.toString(), t.rows.get(0).warnings.isEmpty());
         assertTrue(t.rows.get(0).plane.isTriangle());
+    }
+
+    @Test
+    public void lecturerRowsSurviveAWriteReadCycleBitForBit() throws IOException
+    {
+        // head.csv row 280 (8 decimals) and an interpolated plane (17 significant digits).
+        String lecturer = "3,41.64058498,78.64882498,32.22425753,162.61453132,112.46805458,161.14890225,178.2448837,191.38312044,0.12684021,,,";
+        Plane p = read(lecturer + "\n").rows.get(0).plane;
+        Plane q = read(ex1.io.PlaneCsvWriter.row(p) + "\n").rows.get(0).plane;
+        assertEquals(p.a1().x, q.a1().x, 0.0);
+        assertEquals(p.b().y, q.b().y, 0.0);
+        assertEquals(p.c().z, q.c().z, 0.0);
+        assertTrue(ex1.io.PlaneCsvWriter.row(p), ex1.io.PlaneCsvWriter.row(p).startsWith("3,41.64058498,78.64882498,"));
+        Plane odd = Plane.triangle(new ex1.core.Vec3(Math.PI, Math.E, 1.0 / 3.0), new ex1.core.Vec3(0, 100, 0.1),
+                new ex1.core.Vec3(1e-7, 100, 120.5));
+        Plane back = read(ex1.io.PlaneCsvWriter.row(odd) + "\n").rows.get(0).plane;
+        assertEquals(odd.a1().x, back.a1().x, 0.0);
+        assertEquals(odd.a1().z, back.a1().z, 0.0);
+        assertEquals(odd.b().x, back.b().x, 0.0);
+        assertEquals(odd.c().x, back.c().x, 0.0);
     }
 }

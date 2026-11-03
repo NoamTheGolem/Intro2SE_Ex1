@@ -21,15 +21,19 @@ import java.util.List;
  *   Course format (Ex0.csv):  N, x1,y1,z1, x2,y2,z2, x3,y3,z3 [, x4,y4,z4]     N = 3 or 4
  *   Plain format:             x1,y1,z1, x2,y2,z2, x3,y3,z3 [, x4,y4,z4]
  * </pre>
- * Point order: 3 points = (a, b, c); 4 points = (a1, a2, b, c). A header line, blank lines and
- * '#' comments are skipped.
+ * Point order (the course's convention, {@link PlaneResolver}): 3 points = (a, b, c); 4 points =
+ * (a1, b, a2, c), i.e. the two rails one after the other. A header line, blank lines and '#'
+ * comments are skipped; cells may have spaces around them and use exponents (1.59e2).
  *
  * Every data row becomes exactly one {@link Entry}, i.e. one video frame (7c: "a frame for each
- * plane, in the list order"). The points of a row are interpreted by {@link PlaneResolver}
- * (documented order first, then the other readings of the same points). A row that breaks the
- * plane rules of the Q&amp;A in every reading gets a warning but is still projected; a row that
- * cannot be projected at all (not numbers, wrong count, NaN, zero-length side) gets a warning and
- * a null plane, which becomes a black frame (decision D11 / ADR-0003).
+ * plane, in the list order"), with the policy of the course's edge-case file (ADR-0003):
+ * <ul>
+ *   <li>valid plane: drawn, no warning (a plane that misses the volume is simply black);</li>
+ *   <li>doubtful plane (breaks only the shape rules): drawn as given, with a warning;</li>
+ *   <li>bad row (not numbers, a count that does not match the points, non-finite values,
+ *       collinear or non-coplanar points, crossing sides, an image too large): a warning and a
+ *       null plane, which becomes a black frame.</li>
+ * </ul>
  */
 public final class PlaneCsvReader
 {
@@ -210,40 +214,39 @@ public final class PlaneCsvReader
         double[] coords = coordinates(values, warnings);
         if (coords == null)
         {
-            warnings.add("expected \"3, 9 numbers\", \"4, 12 numbers\", 9 numbers or 12 numbers, got "
-                    + values.length + " numbers -> black frame");
             return new Entry(row, lineNo, null, warnings);
         }
         PlaneResolver.Resolved resolved = PlaneResolver.resolve(coords, eps);
         Plane plane = resolved.plane;
         if (resolved.reordering != null)
         {
-            warnings.add("points are not valid in the documented order; read as " + resolved.reordering);
+            warnings.add(resolved.reordering);
+        }
+        String bad = plane.whyNotRenderable();
+        if (bad != null)
+        {
+            warnings.add(bad + " -> black frame");
+            return new Entry(row, lineNo, null, warnings);
         }
         for (int i = 0; i < resolved.problems.size(); i++)
         {
             warnings.add(resolved.problems.get(i));
         }
-        if (!plane.isRenderable())
-        {
-            warnings.add("plane cannot be projected -> black frame");
-            return new Entry(row, lineNo, null, warnings);
-        }
         if (!resolved.problems.isEmpty())
         {
-            warnings.add("projected anyway with the algorithm's rails a1->b, a2->c");
+            warnings.add("drawn as given, with the algorithm's rails a1->b, a2->c");
         }
         return new Entry(row, lineNo, plane, warnings);
     }
 
     /**
-     * Strips the optional leading point count of the course format and tolerates the usual
-     * spreadsheet artefacts: a 3-point row whose unused x4,y4,z4 cells hold zeros (13 numbers),
-     * and a count that disagrees with the number of points given.
+     * Strips the leading point count of the course format. The count must match the points that
+     * follow: "4" with only the 9 numbers of a triangle is a bad row, not a guess (the course's
+     * edge-case file expects a black frame for it).
      *
      * @param (double[]) v all numbers of the row
-     * @param (List) warnings receives a note when the row was repaired
-     * @return the 9 or 12 coordinates, or null when the count does not fit any format
+     * @param (List) warnings receives the reason when the row is bad
+     * @return the 9 or 12 coordinates, or null for a bad row
      */
     private static double[] coordinates(double[] v, List<String> warnings)
     {
@@ -255,29 +258,31 @@ public final class PlaneCsvReader
         }
         if (v.length != 1 + triangleCoords && v.length != 1 + trapezoidCoords)
         {
+            warnings.add("expected \"3, 9 numbers\" or \"4, 12 numbers\" (or 9 / 12 numbers without the count), got "
+                    + v.length + " numbers -> black frame");
             return null;
         }
-        int count = (int) v[0];
-        double[] rest = tail(v);
-        if (v[0] != count || (count != TRIANGLE_POINTS && count != TRAPEZOID_POINTS))
+        int given = (v.length - 1) / COORDS;
+        if (v[0] != given)
         {
-            warnings.add("first cell " + v[0] + " is not a point count of 3 or 4; using the "
-                    + (rest.length / COORDS) + " points that follow");
-            return rest;
+            warnings.add("the count says " + formatCount(v[0]) + " points but " + given
+                    + " points are given -> black frame");
+            return null;
         }
-        if (count == TRIANGLE_POINTS && rest.length == trapezoidCoords)
+        return tail(v);
+    }
+
+    /**
+     * @param (double) count first cell
+     * @return "4" rather than "4.0"
+     */
+    private static String formatCount(double count)
+    {
+        if (count == Math.rint(count) && Math.abs(count) < 1e9)
         {
-            // "3" followed by 12 numbers: the spreadsheet filled x4,y4,z4 (usually with zeros).
-            warnings.add("count is 3 but 4 points are given; the 4th point is ignored");
-            double[] first = new double[triangleCoords];
-            System.arraycopy(rest, 0, first, 0, triangleCoords);
-            return first;
+            return Long.toString((long) count);
         }
-        if (count == TRAPEZOID_POINTS && rest.length == triangleCoords)
-        {
-            warnings.add("count is 4 but only 3 points are given; read as a triangle");
-        }
-        return rest;
+        return Double.toString(count);
     }
 
     /**

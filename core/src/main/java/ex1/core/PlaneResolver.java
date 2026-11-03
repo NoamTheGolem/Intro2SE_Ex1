@@ -1,31 +1,40 @@
 package ex1.core;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Turns the raw points of one CSV row into the plane that will be projected (ADR-0004).
  *
- * The assignment names the points (a, b, c) and (a1, a2, b, c), but a CSV row only has columns
- * x1..x4, so the order is a convention. The course's own example file (Ex0.csv) lists its
- * 4-point rows as two rails, (a1, b) then (a2, c): read in the documented order its row 4 is
- * not isosceles, read as rails it is a perfect trapezoid. This resolver therefore:
+ * A CSV row only has columns x1..x4, so the order of the points is a convention. The course's
+ * data files use one convention throughout, written down in its edge-case file
+ * ("3 for a triangle a, b, c, or 4 for a trapezoid a', b, a'', c"): a trapezoid is listed as its
+ * two rails, a1 -> b then a2 -> c. That is the order every file of the lecturer's data set
+ * (Ex0.csv, head.csv, biscuit_cake.csv, edge_cases.csv, ...) is valid in, and the order in which
+ * head.csv's slices come out the right way up. The resolver therefore:
  * <ol>
- *   <li>uses the documented order when it satisfies the Q&amp;A rules;</li>
- *   <li>otherwise tries the other readings of the same points (rails order for 4 points,
- *       another apex for 3 points) and uses the first valid one, noting the reordering;</li>
- *   <li>otherwise keeps the documented order and reports the rule violations; the algorithm is
- *       still well defined, so the caller may project the plane anyway.</li>
+ *   <li>reads 3 points as (a, b, c) and 4 points as (a1, b, a2, c), the course order;</li>
+ *   <li>if a 4-point row breaks the rules in the course order but is a valid trapezoid when read
+ *       in the order the Q&amp;A names the points, (a1, a2, b, c), uses that reading and says so;</li>
+ *   <li>otherwise keeps the course order: the caller draws a doubtful plane as given (with
+ *       warnings) and turns a bad one into a black frame.</li>
  * </ol>
+ * It never guesses beyond that (no other apex, no other pairing of the points): "in the face of
+ * ambiguity, refuse the temptation to guess".
  */
 public final class PlaneResolver
 {
+    /** The order the course's files list four points in. */
+    public static final String COURSE_ORDER = "a1, b, a2, c";
+
+    /** The order the assignment's Q&amp;A names four points in. */
+    public static final String QA_ORDER = "a1, a2, b, c";
+
     /** What the resolver decided for one row. */
     public static final class Resolved
     {
         /** The plane to project, in the chosen reading. */
         public final Plane plane;
-        /** How the points were read, e.g. "a1,a2,b,c" or "a1,b,a2,c"; null when the documented order was used. */
+        /** A note when the points were not read in the course order; null otherwise. */
         public final String reordering;
         /** Rule violations of the chosen reading; empty when it is valid. */
         public final List<String> problems;
@@ -56,71 +65,41 @@ public final class PlaneResolver
     }
 
     /**
-     * @param (double[]) coords 9 or 12 coordinates of the row
+     * @param (double[]) coords 9 or 12 coordinates of the row, points in file order
      * @param (double) eps geometric tolerance
      * @return the chosen reading (never null)
      */
     public static Resolved resolve(double[] coords, double eps)
     {
-        Plane documented = Plane.fromValues(coords);
-        List<String> problems = documented.validate(eps);
-        if (problems.isEmpty())
+        Plane course = fromCourseOrder(coords);
+        List<String> problems = course.validate(eps);
+        if (problems.isEmpty() || course.isTriangle())
         {
-            return new Resolved(documented, null, problems);
+            return new Resolved(course, null, problems);
         }
-        List<Plane> alternatives = new ArrayList<Plane>();
-        List<String> names = new ArrayList<String>();
-        if (documented.isTriangle())
+        Plane qa = Plane.fromValues(coords);
+        if (qa.validate(eps).isEmpty())
         {
-            Vec3 p1 = documented.a1();
-            Vec3 p2 = documented.b();
-            Vec3 p3 = documented.c();
-            alternatives.add(Plane.triangle(p2, p1, p3));
-            names.add("apex is point 2: a=p2, b=p1, c=p3");
-            alternatives.add(Plane.triangle(p3, p1, p2));
-            names.add("apex is point 3: a=p3, b=p1, c=p2");
+            return new Resolved(qa, "points read in the Q&A order (" + QA_ORDER + "); in the course order ("
+                    + COURSE_ORDER + ") they are not a valid trapezoid", qa.validate(eps));
         }
-        else
-        {
-            Vec3 p1 = documented.a1();
-            Vec3 p2 = documented.a2();
-            Vec3 p3 = documented.b();
-            Vec3 p4 = documented.c();
-            // Two rails listed one after the other: (p1 -> p2) and (p3 -> p4).
-            alternatives.add(orient(p1, p3, p2, p4));
-            names.add("two rails p1->p2 and p3->p4: a1=p1, a2=p3, b=p2, c=p4");
-            // Rails (p1 -> p4) and (p2 -> p3).
-            alternatives.add(orient(p1, p2, p4, p3));
-            names.add("two rails p1->p4 and p2->p3: a1=p1, a2=p2, b=p4, c=p3");
-        }
-        for (int i = 0; i < alternatives.size(); i++)
-        {
-            Plane candidate = alternatives.get(i);
-            List<String> candidateProblems = candidate.validate(eps);
-            if (candidateProblems.isEmpty())
-            {
-                return new Resolved(candidate, names.get(i), candidateProblems);
-            }
-        }
-        return new Resolved(documented, null, problems);
+        return new Resolved(course, null, problems);
     }
 
     /**
-     * Builds the trapezoid with the shorter base on top (the Q&amp;A requires |a1a2| &lt;= |bc|),
-     * flipping both rails when needed.
-     *
-     * @param (Vec3) a1 start of rail 1
-     * @param (Vec3) a2 start of rail 2
-     * @param (Vec3) b end of rail 1
-     * @param (Vec3) c end of rail 2
-     * @return trapezoid (a1, a2, b, c) or its flipped version (b, c, a1, a2)
+     * @param (double[]) coords 9 or 12 coordinates, points in file order
+     * @return triangle (p1, p2, p3) or trapezoid a1 = p1, b = p2, a2 = p3, c = p4
      */
-    private static Plane orient(Vec3 a1, Vec3 a2, Vec3 b, Vec3 c)
+    public static Plane fromCourseOrder(double[] coords)
     {
-        if (a1.dist(a2) <= b.dist(c))
+        if (coords.length == 12)
         {
-            return Plane.trapezoid(a1, a2, b, c);
+            Vec3 p1 = new Vec3(coords[0], coords[1], coords[2]);
+            Vec3 p2 = new Vec3(coords[3], coords[4], coords[5]);
+            Vec3 p3 = new Vec3(coords[6], coords[7], coords[8]);
+            Vec3 p4 = new Vec3(coords[9], coords[10], coords[11]);
+            return Plane.trapezoid(p1, p3, p2, p4);
         }
-        return Plane.trapezoid(b, c, a1, a2);
+        return Plane.fromValues(coords);
     }
 }
