@@ -1,7 +1,7 @@
 # Algorithm — Engineering Design Document (EDD) of the projection component
 
 **Component:** `ex1.core` (`Plane`, `PlaneResolver`, `Projector` family, `IntensityWindow`)
-**Implements:** SRS REQ-05, REQ-06, REQ-09 … REQ-13, NFR-01, NFR-02, NFR-05
+**Implements:** SRS REQ-05, REQ-06, REQ-07, REQ-09 … REQ-13, NFR-01, NFR-02, NFR-05 · **Version:** 3.1
 **Architecture context:** [SDD](SDD.md) §3–4 · **Tests:** [TESTING.md](TESTING.md) TC-01 … TC-63
 
 This document turns the course's informal algorithm into an exact, implementable
@@ -17,7 +17,7 @@ budget.
 | Item | Definition |
 |------|------------|
 | Volume `M` | `sx × sy × sz` samples, `1 ≤ sx, sy, sz < 2^10`. `M[x][y][z]` is an integer of 8, 16 or 32 bits. Stored flat: `index = x + sx·(y + sy·z)` (x varies fastest — the NRRD order). |
-| Plane `p` | **Triangle** `(a, b, c)` with `|ab| ≈ |ac|`, or **trapezoid** `(a1, a2, b, c)` with `|a1 b| ≈ |a2 c|`, `|a1 a2| ≤ |b c|`, all four points coplanar. Coordinates are **voxel-index coordinates** (same space as `x, y, z` above), may be fractional. |
+| Plane `p` | **Triangle** `(a, b, c)` with `|ab| ≈ |ac|`, or **trapezoid** `(a1, a2, b, c)` with `|a1 b| ≈ |a2 c|`, top `a1a2` parallel to and no longer than the base `bc`, all four points coplanar. Coordinates are **voxel-index coordinates** (same space as `x, y, z` above), may be fractional. In a CSV row the trapezoid's points are listed rail by rail, **`a1, b, a2, c`** (D13). |
 | Output `E` | 2D image, `W × H` pixels, one sample of `M` per pixel. |
 
 A triangle is just a trapezoid whose top edge has zero length
@@ -134,27 +134,35 @@ requirement and the 100 FPS target. Measured numbers are in
 | D6 | Value of pixels **outside the triangle** (corners of `E`). | `0` (black), same as outside `M`. | Matches "if p is NOT in M, v = 0". |
 | D7 | How to turn 16/32-bit values into a video frame. | One **global** window `[lo, hi]` for the whole video (0.5 % – 99.5 % percentiles of the volume), linear map to 0–255. User may override with `--window lo hi`. | Same tissue → same grey in every frame (no flicker); robust to outlier voxels. |
 | D8 | Frames from different planes have different sizes, but a video has one size. | Video size = max `W`, max `H` over all planes (rounded up to even for H.264); each frame is centred on black. | Keeps every frame at true 1 pixel = 1 voxel scale. |
-| D9 | Coordinate system of the CSV points (the course's `Ex0.csv` uses values 0…500, i.e. voxel indices of a 500³ volume). | Voxel-index space `[0, sx) × [0, sy) × [0, sz)`. | Matches the problem definition `M[x][y][z]`. Physical (mm / RAS) coordinates are out of scope. |
-| D10 | Anisotropic voxels (e.g. MRHead: 1 × 1 × 1.3 mm). | Distances are measured in voxel units, as in the definition. | Faithful to the spec; the image may look slightly stretched along that axis. Listed as future work. |
-| D11 | Invalid CSV rows (the course's own `Ex0.csv` has two non-isosceles rows). | Every row = one frame. Rule violations → warning with line number, frame still computed with the algorithm's rails (`a1→b`, `a2→c`, `Dab` rows). Not computable (NaN, zero-length side, wrong number count) → black frame + warning. `--strict` restores fail-fast (exit 2, no video). | Item 7c requires a frame per plane in list order; the algorithm itself is well defined even when `|ab| ≠ |ac|`, so dropping the frame would lose information. |
+| D9 | Coordinate system of the CSV points (the course's `Ex0.csv` uses values 0…500, i.e. voxel indices of a 500³ volume; the lecturer's `head.csv` goes to 255 on a 256×256×130 scan). | Voxel-index space `[0, sx) × [0, sy) × [0, sz)`. The app's *display* uses the NRRD `space directions` (millimetres, patient axes) — the points it writes are still indices. | Matches the problem definition `M[x][y][z]` and every file of the lecturer. |
+| D10 | Anisotropic voxels (e.g. MRHead: 1 × 1 × 1.3 mm). | The projection measures distances in voxel units, as in the definition (1 pixel = 1 voxel step). The app's 3-D and slice views scale by the spacing, so the object itself looks right. | Faithful to the spec and to the lecturer's videos; the video frame may look slightly stretched along that axis. |
+| D11 | Rows that break the rules (the course's own `Ex0.csv` row 3; the lecturer's `edge_cases.csv` rows 7–16). | Every row = one frame. **Doubtful** (legs differ, top not parallel to or wider than the base, side < 1) → drawn as given with the algorithm's rails + warning. **Bad** (count ≠ points given, not numbers, `inf`/`NaN`, side of length 0, `b = c`, collinear, not coplanar, crossing sides, image > 8192) → black frame + warning. Valid but outside the volume → black, no warning. `--strict` restores fail-fast (exit 2, no video). | Item 7c (a frame per plane, in list order) and the lecturer's own expectations for his edge cases ([ADR-0003](adr/0003-invalid-rows-policy.md)). |
 | D12 | `EPS` scale for coplanarity of 4 points. | Distance of `c` from plane `(a1, a2, b)` must be `< EPS · max(1, L)`. | An absolute `0.001` is meaningless for long edges; a relative tolerance is scale-free. |
-| D13 | Which CSV column is which point. The sheet names `(a1, a2, b, c)`; the course's `Ex0.csv` row 4 is only isosceles when read as two rails `(p1→p2, p3→p4)`. | `PlaneResolver`: documented order if valid; otherwise the first valid alternative reading (rails order for 4 points, another apex for 3 points), reported as a note; otherwise documented order + warnings. | Accept the teacher's file as he evidently meant it, without silently changing valid inputs ([ADR-0004](adr/0004-csv-point-order.md)). |
+| D13 | Which CSV column is which point. The Q&A names `(a1, a2, b, c)`; the CSV only has `x1 … x4`. | The **course order**: 3 points = `(a, b, c)`, 4 points = `(a1, b, a2, c)` (rail by rail), as the lecturer's `edge_cases.csv` states and all his files confirm. The Q&A order `(a1, a2, b, c)` only when the course order is invalid and it is fully valid (with a note). No other permutation; a triangle is never reordered. | His files read without a note and come out the right way up ([ADR-0004](adr/0004-csv-point-order.md)). |
 | D14 | Single- or multi-threaded? The FPS requirement says nothing about threads. | Default 1 thread (the number we report); `--threads N|auto` splits **rows** into contiguous blocks on a fixed pool. | Rows write disjoint pixels → no locks, bit-identical output; blocks keep cache locality ([ADR-0007](adr/0007-row-parallelism.md)). |
 
 ---
 
 ## 6. Input validation (Q&A of the assignment, `EPS = 0.001`)
 
-**Triangle** `(a, b, c)`
-1. `| |ab| − |ac| | < EPS`
-2. `|ab| ≥ 1` (at least two rows; otherwise the plane is degenerate)
-3. `a, b, c` not collinear
+Two kinds of rule (D11, [ADR-0003](adr/0003-invalid-rows-policy.md)): breaking a **doubtful**
+rule still leaves a well-defined drawing (it is drawn and warned); breaking a **bad** rule leaves
+nothing sensible to draw (black frame and warning).
 
-**Trapezoid** `(a1, a2, b, c)`
-1. `| |a1 b| − |a2 c| | < EPS`
-2. `|a1 a2| ≤ |b c| + EPS`
-3. `a1, a2, b, c` coplanar (decision D12)
-4. `|a1 b| ≥ 1`
+| Rule | Triangle `(a, b, c)` | Trapezoid `(a1, a2, b, c)` | Kind |
+|------|----------------------|----------------------------|------|
+| equal legs | `| |ab| − |ac| | < EPS` | `| |a1 b| − |a2 c| | < EPS` | doubtful |
+| top parallel to base | — | `a2` within `EPS` of the line through `a1` parallel to `bc` | doubtful |
+| top no wider than base | — | `|a1 a2| ≤ |b c| + EPS` | doubtful |
+| big enough | `|ab| ≥ 1` (at least two rows) | `|a1 b| ≥ 1` | doubtful |
+| finite numbers | every coordinate | every coordinate | bad |
+| sides of length > 0 | `|ab|, |ac| > 0`, `b ≠ c` | `|a1 b|, |a2 c| > 0` | bad |
+| a plane at all | `a, b, c` not collinear | the 4 points coplanar (D12) | bad |
+| a simple shape | — | rails do not cross, top and base do not cross | bad |
+| a sane image | `W, H ≤ 8192` | `W, H ≤ 8192` | bad |
+
+`Plane.validate(eps)` returns the doubtful problems, `Plane.whyNotRenderable()` the first bad one
+(or `null`).
 
 ---
 
@@ -178,7 +186,7 @@ requirement and the 100 FPS target. Measured numbers are in
 | **Always trilinear** | 3× the cost; the sheet's `M[p]` is nearest neighbour. Kept as an option. |
 | **Per-pixel tasks / parallel streams** | Task overhead dwarfs a 2–30 ns pixel; row blocks of ≥ 8 rows amortise it. |
 | **GPU (CUDA/OpenCL)** | Out of scope for Ex1; listed by the course as an Ex5 option. The row structure maps 1:1 to a 2-D kernel. |
-| **Reject the course's row 4** (`(a1,a2,b,c)` only) | Would turn the teacher's own example into a warning; the rails reading is unambiguous for that file. |
+| **Try every permutation of the points until one is valid** (our v3.0 did a little of this) | Silently draws something other than the row says; the course order is known from the lecturer's files (D13), so a wrong row is reported instead. |
 
 ## 9. Error handling and edge cases
 
@@ -186,8 +194,8 @@ requirement and the 100 FPS target. Measured numbers are in
 |-----------|-----------|-------|
 | Point outside `M` | sample = 0 | `NearestProjector`, `TrilinearProjector` |
 | Row 0 of a triangle (`d = 0`) | one sample at the apex, no division | `Projector.projectRows` |
-| Rail of length 0, NaN, or side > 8192 | not renderable → black frame + warning | `Plane.isRenderable`, `PlaneCsvReader` |
-| Non-isosceles input | rendered with the algorithm's rails; width covers the longest row (D5) | `Plane.imageWidth` |
+| Bad plane (§6: side of length 0, `NaN`/`inf`, collinear, not coplanar, crossing sides, > 8192 px) or a bad row (count ≠ points, not numbers) | black frame + warning naming the reason | `Plane.whyNotRenderable`, `PlaneCsvReader` |
+| Doubtful plane (§6: legs differ, top not parallel / wider, tiny) | drawn as given with the algorithm's rails; width covers the longest row (D5); warning | `Plane.validate`, `Plane.imageWidth` |
 | Image buffer smaller than the plane | `IllegalArgumentException` (programming error, not input) | `Projector.project` |
 | Constant volume (window `hi == lo`) | window widened by 1 so no division by zero | `IntensityWindow.fromPercentiles` |
 | `uint32` values above 2³¹ | read through a `long` mask; float conversion keeps 24-bit precision, enough for 8-bit output | `IntVolume.valueAt` |

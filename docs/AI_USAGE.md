@@ -17,6 +17,7 @@ did" column is how we made sure we can explain it.
 | 8 | 2026-10-25 | Review | Re-checked the solution against the PDF line by line and **found that it could not read the course's own `Ex0.csv`** (count column, quoted cells, two rows that break the rules). Fixed the reader, changed the policy to one frame per row with warnings (ADR-0003), added the 500³ phantom and the `Ex0` wrappers | We noticed the solution did not match the assignment and asked for a careful review |
 | 9 | 2026-11-03 | Course alignment | Read the course repo, syllabus, TA slides and the four class decks; restructured the documents to the lecturer's templates (SRS with use cases + traceability, SDD, EDD, STP/STD, ADRs, README template); added `Ex0.py`, `--threads` (`ParallelProjector`), `PlaneResolver` for the point-order question (ADR-0004), GitHub Actions CI on Linux + Windows, LICENSE, CONTRIBUTING, PR template | We asked for a full review against what the course intends; we set up the GitHub repository |
 | 10 | 2026-11-03 | **The app** | After we explained that the exercise is an *application* — load one of the lecturer's test models, cut it with a plane you place on the model, see the cut, then extract the video for his use cases — the AI replaced the small viewer with `StudioApp`: a 3-D model view (software z-buffer, no OpenGL), the cutting plane drawn on the model and textured with its cut, a plane editor (`PlaneSpec`: centre, yaw/pitch/roll, size; presets; wheel to slice), a use-case list with CSV load/save, interpolation and MP4 export; GUI test by `java.awt.Robot` on a virtual display; docs re-centred (SRS REQ-18…24, UC-02/05, SDD §4.1, ADR-0008, TESTING B.9/B.10) | We described what the app must do and checked it on the course CSV: the exported video reproduced by the demo byte for byte; the AI's first CSV writer was wrong (3 decimals, see EXPERIMENT §7) and we kept the fix as a test |
+| 11 | 2026-11-03 | **The lecturer's data and the cut-open app** | We told the AI it had not read everything: the lecturer's Drive folder of test subjects, and what he said the app is for — choose 3 points and see how the object looks *inside* that cut, like a pie cut in the middle. With our permission it downloaded the folder through the browser on our PC, read his `edge_cases.csv` and use cases, and found that our point order was wrong (`a1, b, a2, c`, not `a1, a2, b, c` — ADR-0004) and that his rows fall into valid / doubtful / bad (ADR-0003). It rewrote the resolver and the reader, built his die (`data/dice.nrrd`) so his edge cases became a test that passes exactly as his comment says, and rebuilt the 3-D view as a solid cut open by the plane (`SolidModel`, `CutawayRenderer`, ADR-0009) with Slicer's Axial/Coronal/Sagittal views (`VolumeGeometry`, `OrthoView`) and picking of the 3 points | We checked the app on all five of his scans (screenshots in `docs/img/`), checked that his `head.csv` loads with no warning and exports byte for byte, ran the 90 tests, and reviewed the new classes with the AI explaining the ray caster and the flood fill |
 
 ## What we verified ourselves
 
@@ -38,5 +39,13 @@ did" column is how we made sure we can explain it.
 * The app's first CSV writer rounded to 3 decimals, which broke the `EPS = 0.001` rule for
   oblique planes on the way back in and made the reader choose a crossed pairing of the points.
   Caught by rendering the exported CSV with the demo and comparing the frames.
+* v3.0 read the four points of a trapezoid in the Q&A order `(a1, a2, b, c)` and only fell back
+  to "rails" when that was invalid. The lecturer's own files list them rail by rail
+  (`a1, b, a2, c`); in the Q&A order every rectangle of his use cases would have come out
+  transposed. Caught only once the AI read his test data — lesson (again): his artefacts first.
+* v3.0's 3-D view showed three slices in a box: correct, but not what he asked for — the object
+  itself, cut open, with its inside visible. We pointed at his words and his Figure 1.
+* The CSV writer's 6 decimals still changed one frame of the lecturer's `head.csv` on the way
+  through the app; exact numbers (shortest round-trip decimal) fixed it for good.
 * A unit test expected `grey(150) == 128` for the window `[100, 200]`; 127.5 is a rounding tie
   that floating point resolves to 127. The test, not the code, was wrong.

@@ -4,6 +4,8 @@ cd /d "%~dp0\.."
 call Ex0.bat data\phantom_spheres_500.nrrd data\Ex0.csv results\Ex0_phantom500.mp4 || exit /b 1
 call Ex0.bat data\MRHead.nrrd data\Ex0.csv results\Ex0_MRHead.mp4 || exit /b 1
 for %%M in (rotate sweep tilt triangle) do call Ex0.bat data\MRHead.nrrd data\planes_%%M.csv results\MRHead_%%M.mp4 || exit /b 1
+call Ex0.bat data\MRHead.nrrd data\planes_tilt.csv results\MRHead_tilt_trilinear.mp4 --interp trilinear || exit /b 1
+for %%P in (spheres_u8 checker_u16 gradient_u32) do call Ex0.bat data\phantom_%%P.nrrd data\planes_phantom_rotate.csv results\phantom_%%P.mp4 || exit /b 1
 call Ex0.bat data\dice.nrrd data\course\edge_cases.csv results\edge_cases_dice.mp4 || exit /b 1
 rem The lecturer's test subjects are not stored here (data\README.md): set LECTURER=<folder of the Drive download>
 if defined LECTURER (

@@ -1,7 +1,8 @@
 name: CI
 
 # Every push and pull request: build with -Werror, run all unit tests, then run the demo
-# command of the assignment on the course's own Ex0.csv and check the video frame count.
+# command of the assignment on the course's own Ex0.csv and the lecturer's edge cases and check
+# the video frame counts.
 on:
   push:
   pull_request:
@@ -37,7 +38,8 @@ jobs:
         run: |
           python Ex0.py data/phantom_spheres_u8.nrrd data/Ex0.csv ex0_demo.mp4 --threads auto
           python Ex0.py data/MRHead.nrrd data/planes_triangle.csv triangle.mp4 --interp trilinear
-          ls -l ex0_demo.mp4 triangle.mp4
+          python Ex0.py data/dice.nrrd data/course/edge_cases.csv edge_cases.mp4
+          ls -l ex0_demo.mp4 triangle.mp4 edge_cases.mp4
 
       - name: Check frame counts with ffprobe (when available)
         shell: bash
@@ -47,6 +49,8 @@ jobs:
             echo "Ex0.csv -> $n frames"; test "$n" = "4"
             n=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 triangle.mp4)
             echo "planes_triangle.csv -> $n frames"; test "$n" = "72"
+            n=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 edge_cases.mp4)
+            echo "the lecturer's edge_cases.csv -> $n frames"; test "$n" = "16"
           else
             echo "ffprobe not installed on this runner; frame-count check done by the JUnit demo test on Linux"
           fi

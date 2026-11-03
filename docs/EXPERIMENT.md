@@ -1,18 +1,20 @@
 # Experiment and Results (To-Do item 8)
 
-**Verifies:** NFR-01 (≥ 30 / 100 FPS), NFR-02 (threads), REQ-07 (course CSV), REQ-17 (dataset)
-**Videos:** [`results/`](../results/) · **Reproduce:** `scripts/render_demo_videos.sh` (or `.bat`) and
-`java -cp build/Ex0.jar ex1.app.Benchmark N`
+**Verifies:** NFR-01 (≥ 30 / 100 FPS), NFR-02 (threads), NFR-10 (3-D view), REQ-04…07 (the course's
+and the lecturer's CSVs), REQ-17 (dataset), REQ-19/25/26 (the app on the lecturer's scans)
+**Videos:** [`results/`](../results/) · **Reproduce:** `scripts/render_demo_videos.sh` (or `.bat`;
+`LECTURER=<folder with his scans>` adds his use cases) and `java -cp build/Ex0.jar ex1.app.Benchmark N`
 
 ## 1. Setup
 
 | Item | Value |
 |------|-------|
 | Machine | Cloud Linux VM, **2 vCPU** (shared, noisy), 7 GB RAM — deliberately a weak machine; a laptop is faster |
-| JVM | OpenJDK 21, default flags (`-Xmx3g` only for the 1000³ volume) |
+| JVM | OpenJDK 21, default flags (`-Xmx3g` only for the 1000³ volume and the croissant) |
 | Timing | `System.nanoTime`; 100 warm-up frames, then 300 timed frames; file I/O and encoding excluded |
 | Planes | 64 random oblique isosceles triangles with side ≈ N (large and oblique = the worst realistic case) |
 | Threads | 1 (the requirement) and 2 (all cores of this VM) |
+| Data | `data/` (MRHead, phantoms, the die), the lecturer's five scans and CSVs (his Drive folder; CSVs in `data/course/`) |
 
 ## 2. Performance (NFR-01: ≥ 30 FPS required, ≥ 100 FPS expected at 500³)
 
@@ -20,15 +22,16 @@
 |-------:|-----------:|-------------:|-------------:|--------------:|--------------:|---------------------:|
 | 100³ | 101×112 | 16 900 FPS | 4 489 | 9 512 | 5 600 | 5.3 |
 | 250³ | 251×280 | 3 432 | 856 | 2 074 | 746 | 4.2 |
-| **500³** | **501×560** | **281 – 436** | **110 – 134** | 372 – 395 | 149 – 165 | 8.2 – 12.7 |
+| **500³** | **501×560** | **281 – 436** | **110 – 136** | 372 – 456 | 149 – 167 | 8.2 – 12.7 |
 | 1000³ | 1001×1119 | 98 | 27 | 97 | 36 | 9.2 |
 
-Ranges at 500³ are from three runs on different days (the VM is shared); the lowest value is the
-one to quote.
+Ranges at 500³ are from four runs on different days (the VM is shared; the latest, 3 Nov:
+NN 353 / TL 136 / NN×2 456 / TL×2 167); the lowest value is the one to quote.
 
 **Result:** at 500³, nearest neighbour runs at **≥ 280 FPS single-threaded** — 2.8× the
 expected 100 FPS and 9× the required 30 — and trilinear also clears 100 FPS. Even the largest
-allowed volume (~1000³) stays near 100 FPS with nearest neighbour.
+allowed volume (~1000³) stays near 100 FPS with nearest neighbour. The lecturer's own 500³ scan
+(the croissant, §4) runs his use case at 238 FPS.
 
 **Observations**
 
@@ -36,13 +39,12 @@ allowed volume (~1000³) stays near 100 FPS with nearest neighbour.
    a 100³ volume (1 MB) lives in cache, a 500³ one (125 MB) does not, and an oblique plane jumps
    across z-slices that are `sx·sy` bytes apart. The algorithm is `O(W·H)` as designed (EDD §4);
    what grows is cache misses per sample.
-2. *Threads help the compute-bound path, not the memory-bound one, on this VM.* Trilinear
-   (≈ 27 ns of arithmetic per pixel) gains 1.2–1.35× with 2 threads; nearest neighbour is limited
-   by memory bandwidth and shows no gain (even a loss at 100³, where a frame takes 60 µs and the
+2. *Threads help the compute-bound path more than the memory-bound one on this VM.* Trilinear
+   (≈ 26 ns of arithmetic per pixel) gains 1.2–1.35× with 2 threads; nearest neighbour is limited
+   by memory bandwidth and gains little (even a loss at 100³, where a frame takes 60 µs and the
    hand-off to the pool costs more than it saves — the `ParallelProjector` keeps planes under 16
-   rows on the calling thread for that reason). On a laptop with 4–8 real cores and a larger
-   cache the picture changes; the output is bit-identical either way (TC-56), so the default
-   stays at one thread and `--threads auto` is an opt-in.
+   rows on the calling thread for that reason). The output is bit-identical either way (TC-56),
+   so the default stays at one thread and `--threads auto` is an opt-in.
 
 ## 3. The course's example CSV (`Ex0.csv`)
 
@@ -55,20 +57,20 @@ Console (both runs):
 
 ```
 Warning : row 3 (line 4): side lengths differ: |ab| = 497.3932, |ac| = 476.8648 (must differ by < 0.001)
-Warning : row 3 (line 4): projected anyway with the algorithm's rails a1->b, a2->c
-Warning : row 4 (line 5): points are not valid in the documented order; read as two rails p1->p2 and p3->p4: a1=p1, a2=p3, b=p2, c=p4
+Warning : row 3 (line 4): drawn as given, with the algorithm's rails a1->b, a2->c
 Volume  : phantom_spheres_500.nrrd 500x500x500 UINT8
 Planes  : 4 from Ex0.csv
-Frames  : 502x504 @ 10 fps, nearest, 1 thread(s)
+Frames  : 462x504 @ 10 fps, nearest, 1 thread(s)
 ```
 
 Both videos have **exactly 4 frames** (`ffprobe`), one per CSV row, in order (REQ-07, TC-31).
+Read in the course order (`a1, b, a2, c`, ADR-0004), rows 2 and 4 are valid without any note; only
+row 3 is doubtful (drawn as given, warned).
 
 **On the 500³ phantom** (the coordinates of `Ex0.csv` go up to 500, so this is the box they
-describe). Left to right: row 1 isosceles triangle in the plane `y = 200`; row 2 rectangle
-`x = 200`; row 3 the non-isosceles triangle — visibly lopsided, exactly as its rails define it;
-row 4 the trapezoid read as two rails — symmetric, short base on top, as an isosceles trapezoid
-should look:
+describe). Left to right: row 1 isosceles triangle in the plane `y = 200`; row 2 the 401×501
+rectangle `x = 200` (rails along `z`); row 3 the non-isosceles triangle — visibly lopsided, exactly
+as its rails define it; row 4 the isosceles trapezoid, short base on top:
 
 ![Ex0.csv on 500^3](img/ex0_phantom500.png)
 
@@ -77,10 +79,54 @@ NOT in M, v = 0"); the part inside shows the head:
 
 ![Ex0.csv on MRHead](img/ex0_mrhead.png)
 
-*The FPS that `Ex0` prints for a 4-frame run (60–180) includes JIT warm-up of a cold JVM; the
+*The FPS that `Ex0` prints for a 4-frame run (70–160) includes JIT warm-up of a cold JVM; the
 steady-state figure is the benchmark in §2.*
 
-## 4. Demo runs on real data (MRHead.nrrd, 256×256×130, int16, from 3D Slicer)
+## 4. The lecturer's test data
+
+His Drive folder holds five scans, a use case for each, an `edge_cases.csv` and example images.
+Every use case was rendered by the demo (`python Ex0.py <scan> data/course/<case>.csv out.mp4`):
+
+| Scan | Size, type | Use case (rows) | What the planes do | Warnings | Frame | Projection, 1 thread | Video |
+|------|-----------|-----------------|--------------------|---------:|------:|---------------------:|-------|
+| `MRHead_1.nrrd` | 256×256×130, int16 | `head.csv` (280) | 131 slices `z = k`, 89 turning rectangles, 60 turning triangles | 0 | 256×256 | 216 ms (1 299 FPS) | `results/lecturer_head.mp4` |
+| `onion.nrrd` | 256×256×130, uint8 | `onion.csv` (120) | two turns of 60 rectangles | 0 | 256×256 | 149 ms (806 FPS) | `results/lecturer_onion.mp4` |
+| `swiss_roll.nrrd` | 256×256×130, uint32 | `swiss_roll.csv` (120) | two turns of 60 rectangles | 0 | 256×256 | 199 ms (604 FPS) | `results/lecturer_swiss_roll.mp4` |
+| `biscuit_cake.nrrd` | 256×256×130, uint16 | `biscuit_cake.csv` (120) | two turns of 60 rectangles | 0 | 256×256 | 113 ms (1 067 FPS) | `results/lecturer_biscuit_cake.mp4` |
+| `croissant.nrrd` | **500×500×500**, uint8 | `croissant.csv` (100) | 100 turning triangles | 0 | 502×560 | 420 ms (**238 FPS**) | `results/lecturer_croissant.mp4` |
+
+All 640 rows read in the course order without a note; the `z = k` slices of `head.csv` come out
+the right way up (rows along `y`), as in his images. (Our v3.0 read 4 points in the Q&A order and
+would have transposed every rectangle — the reason for the revised ADR-0004.)
+
+**Edge cases** — `python Ex0.py data/dice.nrrd data/course/edge_cases.csv results/edge_cases_dice.mp4`
+on the die his file describes (200×180×160 uint32, cube 40…159 × 30…149 × 20…139 = 100 000, pips
+= 200 000; `PhantomGenerator dice`):
+
+```
+Warning : row 7 (line 29): side lengths differ: |ab| = 188.7882, |ac| = 226.6319 (must differ by < 0.001)
+Warning : row 7 (line 29): drawn as given, with the algorithm's rails a1->b, a2->c
+Warning : row 8 (line 31): top a1a2 is not parallel to base bc (a2 is 16.0000 off the parallel through a1)
+Warning : row 8 (line 31): drawn as given, with the algorithm's rails a1->b, a2->c
+Warning : row 9 (line 35): the count says 4 points but 3 points are given -> black frame
+Warning : row 10 (line 37): not a list of numbers: "3,99.5,0,139,0,179,139,199,179,abc,,," -> black frame
+Warning : row 11 (line 39): not a list of numbers: "3,99.5,0,139,0,179,inf,199,179,139,,," -> black frame
+Warning : row 12 (line 41): points b and c are the same point -> black frame
+Warning : row 13 (line 43): points a, b, c are collinear (no plane) -> black frame
+Warning : row 14 (line 45): the four points are not on one plane (c is 14.2780 from plane a1,a2,b) -> black frame
+Warning : row 15 (line 47): the sides cross each other -> black frame
+Warning : row 16 (line 49): the image would be 10200 pixels wide or high (limit 8192) -> black frame
+Volume  : dice.nrrd 200x180x160 UINT32
+Planes  : 16 from edge_cases.csv
+Frames  : 280x280 @ 10 fps, nearest, 1 thread(s)
+Projection: 16 frames in 11.9 ms (1342 fps, I/O excluded)
+```
+
+His expectation — *"16 frames; black: frames 6, 9 to 16; a warning for frames 7 to 16"* — is met
+exactly, and frames 1–3 show the faces with 1, 6 and 4 pips (checked pixel by pixel in TC-38).
+Frame 6 is black without a warning because it is a valid plane above the die.
+
+## 5. Demo runs on MRHead with generated plane lists (`data/MRHead.nrrd`, 3D Slicer)
 
 ```
 python Ex0.py data/MRHead.nrrd data/planes_<mode>.csv results/MRHead_<mode>.mp4
@@ -88,28 +134,29 @@ python Ex0.py data/MRHead.nrrd data/planes_<mode>.csv results/MRHead_<mode>.mp4
 
 | CSV | Planes | Frame size | Projection time | Video |
 |-----|-------:|-----------:|----------------:|-------|
-| `planes_sweep.csv` (rectangles, z = 0…129) | 130 | 256×256 | 100 ms (1 300 FPS) | `results/MRHead_sweep.mp4` |
-| `planes_rotate.csv` (0…180° around y) | 90 | 288×256 | 148 ms (607 FPS) | `results/MRHead_rotate.mp4` |
-| `planes_tilt.csv` (−60…60° around x) | 90 | 256×288 | 81 ms (1 112 FPS) | `results/MRHead_tilt.mp4` |
-| `planes_triangle.csv` (triangles, 0…360°) | 72 | 232×258 | 57 ms (1 274 FPS) | `results/MRHead_triangle.mp4` |
-| `planes_tilt.csv`, `--interp trilinear` | 90 | 256×288 | 252 ms (357 FPS) | `results/MRHead_tilt_trilinear.mp4` |
+| `planes_sweep.csv` (rectangles, z = 0…129) | 130 | 256×256 | 71 ms (1 820 FPS) | `results/MRHead_sweep.mp4` |
+| `planes_rotate.csv` (0…180° around y) | 90 | 288×256 | 100 ms (896 FPS) | `results/MRHead_rotate.mp4` |
+| `planes_tilt.csv` (−60…60° around x) | 90 | 256×288 | 74 ms (1 216 FPS) | `results/MRHead_tilt.mp4` |
+| `planes_triangle.csv` (triangles, 0…360°) | 72 | 232×258 | 34 ms (2 101 FPS) | `results/MRHead_triangle.mp4` |
+| `planes_tilt.csv`, `--interp trilinear` | 90 | 256×288 | 239 ms (376 FPS) | `results/MRHead_tilt_trilinear.mp4` |
 
 ![MRHead frames](img/mrhead_contact.png)
 
 *Rows: sweep (sagittal slices), rotate (sagittal → coronal), tilt, rotating triangles — the
 triangle row shows the exact shape the course algorithm defines.*
 
-## 5. Synthetic dataset (phantoms with known answers)
+## 6. Synthetic dataset (phantoms with known answers)
 
 | File | Type | Content | Expected cross-section | Seen |
 |------|------|---------|------------------------|------|
 | `phantom_spheres_u8.nrrd` | uint8 | nested balls | concentric rings at **every** angle | ✔ |
 | `phantom_checker_u16.nrrd` | uint16 | 16³ checkerboard | squares when axis-aligned, stretched stripes when rotated | ✔ |
 | `phantom_gradient_u32.nrrd` | uint32 (values up to 4·10⁹) | `x + y + z` ramp | smooth diagonal ramp | ✔ |
+| `dice.nrrd` | uint32, 3 values | the lecturer's die | faces with 1, 6, 4 pips (§4) | ✔ |
 
 ![Phantoms](img/phantoms.png)
 
-## 6. Nearest neighbour vs trilinear
+## 7. Nearest neighbour vs trilinear
 
 Nearest neighbour shows stair-step edges on oblique planes (each pixel snaps to one voxel);
 trilinear is visibly smoother at ~3× the cost. Both meet the target at 500³, so trilinear is a
@@ -117,52 +164,81 @@ free quality upgrade when there is FPS headroom.
 
 ![Nearest (left) vs trilinear (right), zoomed ×3](img/nearest_vs_trilinear.png)
 
-## 7. The app on the course's use case
+## 8. The app on the lecturer's scans
 
-The app was driven by a `java.awt.Robot` script on a virtual display (the same steps as the
-manual script TESTING.md B.10) with `data/MRHead.nrrd` and the course's `Ex0.csv`:
+**What it shows.** Each scan is turned into a solid (ADR-0009) and cut open by the plane: the half
+between the viewer and the plane is removed, so the cut face shows the inside of the object —
+the brain inside the skull, the onion's rings, the swiss roll's spiral, the croissant's layers —
+next to the shaded outside. Rows: head, onion, swiss roll, croissant; columns: the default
+triangle `a, b, c`, then the **Axial**, **Coronal** and **Sagittal** presets (each puts the plane on
+that view's current slice and turns the camera to face it):
 
-| Step | Observed |
-|------|----------|
-| Open sample | 256×256×130 INT16 loaded in 0.3 s; model with box, axes, three mid-slices; oblique plane 230×230 on it |
-| Load `Ex0.csv` | warning dialog with the two messages of rows 3–4 (same text as the demo); four lines in the list |
-| Row 2 (rectangle 500×400, plane y = 0…400 at x = 200) | the plane stands in the box and continues outside it; the cut shows the head in the upper-left part of a mostly black 501×401 image — exactly what the demo renders for that row |
-| Row 4 (trapezoid, rails read as `p1→p2, p3→p4`) | plane drawn with `a1 a2 b c` labels, 401×503 cut, status "valid" with the resolver's note |
-| Triangle preset + Add current | fifth line "added: Triangle 205x205 @ (128, 128, 65) yaw 35 pitch 25 roll 0"; cut 205×229 in 1.0 ms |
-| Frames between planes = 5, Play | the plane glides between the five entries; 31 frames, no invalid frame |
-| Export video… (15 fps) | 31 frames 502×504 in 0.9 s; `MRHead_usecase.mp4` (12.3 MB with the built-in writer, 150 KB when ffmpeg is present) + `MRHead_usecase.csv` |
-| `Ex0 data/MRHead.nrrd MRHead_usecase.csv x.mp4 --fps 15` | "Planes: 31", "Frames: 502x504", only the row-3 warning inherited from `Ex0.csv`; **decoded frames identical** to the app's export (`cmp` of 7 843 248 bytes) |
+![The lecturer's scans cut open](img/cut_open_gallery.png)
 
-![Row 2 of Ex0.csv in the app](img/app_row2.png)
+The whole window — the head with the Axial preset: 3-D view (top left), the cut = the video
+frame (top right), Axial/Coronal/Sagittal with the plane's line and points (bottom), points
+editor, presets and sliders, and the use-case list with the button that loads `head.csv`:
 
-Interactive projection time on the 2-vCPU VM (status line, 2 threads): 1–2 ms for the 205×229
-triangle, 5–10 ms for the 401×503 trapezoid — i.e. the views follow the sliders at 100+ updates
-per second; the software-rendered model view costs another 5–15 ms per repaint.
+![The app with MRHead_1 and the Axial preset](img/app_head_axial.png)
 
-A detail the round trip caught: the first writer printed 3 decimals, which moved the two rails
-of an oblique trapezoid apart by ≈ 0.001 — exactly `EPS`. The reader then declared the row
-invalid and the resolver picked the *crossed* pairing of the four points, producing a bow-tie.
-Two fixes, both tested: 6 decimals in the writer (TC-48) and a rule that the rails of a
-trapezoid must not cross (TC-08). The app now renders planes quantized to the CSV precision, so
-the video and the CSV can never disagree (TC-86).
+**Choosing a cut by 3 points** (Robot script on a virtual display, the steps of TESTING B.11):
+*Pick a, b, c* → `a` clicked on the top of the head in the Sagittal view, `b` and `c` at the back
+of the head in the Axial view → the app reports "Made isosceles for the algorithm: c moved along
+a->c, |ac| 131.4 -> 131.1 = |ab|", cuts the head there and turns the camera to the cut: the
+brain shows on the cut face, brightest inside the triangle; the 85×132 cut is projected in
+0.3 ms:
 
-## 8. Other observations
+![Three picked points cut the head open](img/app_head_picked.png)
 
-1. **Anisotropic voxels (EDD D10).** MRHead has 1.3 mm spacing on one axis. Distances are
-   measured in voxel units, as the assignment defines, so coronal views in the rotate video look
-   ~23 % narrower than reality. Future work: scale axes by the NRRD `space directions`.
+The swiss roll with the Sagittal preset — the cut face is the roll seen lengthwise; in the slice
+views the four corners share labels where they coincide ("a1, b", "a2, c"):
+
+![The swiss roll, sagittal](img/app_swissroll_sagittal.png)
+
+**Timings** (the 2-vCPU VM; `ModelTiming` harness, renders after warm-up, 520×340 view):
+
+| Scan | Load | Solid model (size) | Default surface | 3-D frame, 1 thread | 3-D frame, 2 threads | Half resolution, 2 threads |
+|------|-----:|-------------------:|----------------:|--------------------:|---------------------:|---------------------------:|
+| MRHead_1 256×256×130 | 87 ms | 0.85 s (full) | grey 74 | 27 ms | 14 ms | 4 ms |
+| onion 256×256×130 | 52 ms | 0.92 s | 96 | 40 ms | 19 ms | 6 ms |
+| swiss_roll 256×256×130 | 162 ms | 0.74 s | 77 | 35 ms | 18 ms | 5 ms |
+| biscuit_cake 256×256×130 | 95 ms | 0.55 s | 77 | 24 ms | 14 ms | 4 ms |
+| croissant 500×500×500 | 708 ms | 2.62 s (250³) | 56 | 53 ms | 26 ms | 7 ms |
+
+So the 3-D view redraws at 140–250 FPS at half resolution while the user drags, and sharpens to
+38–70 FPS full frames (NFR-10: ≥ 10 FPS while moving, sharp within 0.5 s — met with a wide
+margin). The first frame after loading is slower (75–150 ms in the app's status line) because the
+JIT has not compiled the ray loop yet. The 2-D cut costs 1–10 ms as before.
+
+**The lecturer's use cases in the app.** Opening `MRHead_1.nrrd` enables *Load its use case:
+head.csv* (found in `data/course/`); one click loads the 280 planes without a warning, *Play*
+runs through them on the cut-open head, and *Export video…* writes the MP4 and the CSV.
+`Ex0 MRHead_1.nrrd <exported>.csv x.mp4` reproduces it byte for byte (decoded frames compared
+with `cmp`). An earlier export differed from the lecturer's rows in one frame because the
+writer rounded to 6 decimals; the writer now prints exact numbers (ADR-0008, TC-48).
+
+## 9. Other observations
+
+1. **Anisotropic voxels (EDD D10).** MRHead has 1.3 mm spacing on one axis. The projection
+   measures distances in voxel units, as the assignment defines, so a coronal video frame looks
+   ~23 % narrower than reality; the app's 3-D and slice views use the spacing and look right.
 2. **Course algorithm's off-by-one (EDD D1).** Implemented literally, step 5a skips the apex row
    and never reaches `b`. We sample rows `0 … floor(Dab)`, so both ends appear (TC-53).
 3. **Global window (ADR-0006).** One window per video avoids brightness flicker between frames;
-   the 0.5/99.5 % percentiles ignore the few very bright voxels (fat, vessels).
+   the 0.5/99.5 % percentiles ignore the few very bright voxels. The die has only three values,
+   where percentiles would map the pips (≈ 3 % of the cube) to the same white as the cube — hence
+   the `[min, max]` rule for ≤ 16 grey levels.
 4. **Built-in MP4 size (ADR-0005).** `Ex0_MRHead.mp4` is 20 KB with ffmpeg and ~1.5 MB with the
    built-in lossless writer; the 130-frame sweep grows from 1.8 MB to ~13 MB. Acceptable for a
    demo; ffmpeg is picked up automatically when installed.
+5. **Thresholds of the solid (ADR-0009).** Otsu's split gave a clean object on all five scans; the
+   croissant's crust is thin and its default surface (grey 56) is the lowest. Lowering the
+   Surface slider brings back scanner noise as floating specks, raising it thins the skin — the
+   cut face does not depend on it.
 
-## 9. Future work
+## 10. Future work
 * GPU (CUDA) version — the course's Ex5 option 5.1; the row structure maps directly to a 2-D kernel.
-* Physical (mm) coordinates from `space origin` / `space directions`.
-* Android front end reusing `core`, `PlaneSpec` and `Raster` unchanged (interactive plane control
-  as a game).
-* Volume ray casting in the model view (a shaded surface instead of three slices).
-* Physical units in the app (mm sliders) once `space directions` are honoured.
+* Physical (mm) coordinates in the CSV (opt-in), from `space origin` / `space directions`.
+* Android front end reusing `core`, `PlaneSpec`, `SolidModel`, `CutawayRenderer` and `Raster`
+  unchanged (picking points by touch).
+* A smoother surface for large scans: model at full resolution with a coarse-to-fine ray march.

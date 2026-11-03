@@ -1,6 +1,7 @@
-# ADR-0008: Edit planes as centre + angles + size; draw the model with a software rasterizer
+# ADR-0008: Edit planes as centre + angles + size; draw the 3-D view with a software renderer
 
-**Status:** Accepted · **Date:** 2026-11-03
+**Status:** Accepted · **Date:** 2026-11-03 · part 2 (what the model view shows) is superseded by
+[ADR-0009](0009-cut-open-solid-and-point-picking.md); part 3 revised the same day
 
 ## Context
 The exercise is an *application*: load a model, cut it with a plane the user positions, see the
@@ -10,35 +11,39 @@ answer:
 1. **How does a user move a plane?** The sheet defines a plane by 3 or 4 points, and the points
    must form an isosceles triangle / trapezoid within `EPS = 0.001`. Dragging one point breaks
    that rule immediately; typing twelve coordinates is not "positioning".
-2. **How do we show the model and the plane on it?** JavaFX 3D is no longer part of the JDK,
+2. **How do we draw the model and the plane on it?** JavaFX 3D is no longer part of the JDK,
    OpenGL (JOGL/LWJGL) needs native jars per OS, and a volume-rendering library would be the
    largest dependency of the project. The build must stay offline and JDK-only (SRS C-3).
 
 ## Decision
-1. `PlaneSpec` is the editable form of a plane: **centre (x, y, z), yaw / pitch / roll, width,
+1. `PlaneSpec` is the movable form of a plane: **centre (x, y, z), yaw / pitch / roll, width,
    height, top/bottom ratio** (0 % = triangle, 100 % = rectangle). `toPlane()` builds the sheet's
    points from it — by construction the rails are equal, the bases parallel and the top no wider
    than the bottom, so every slider position is a valid plane. `fromPlane()` is the inverse (a
-   CSV row loads back into the sliders), and **interpolation between planes happens in this
-   space** (`lerp`: shortest arc for the angles, linear for the rest), which keeps every
-   in-between frame valid. Presets (XY, XZ, YZ, Triangle, Oblique) are specs too.
-2. The model view is a **~400-line software z-buffer renderer** (`Raster`: textured and solid
-   triangles, depth-tested lines; `Camera3D`: orthographic orbit). It draws the bounding box and
-   axes, the volume's three middle slices as textures, and the cutting plane **textured with its
-   own cut** in its true position. Everything is `int[]` ARGB blitted once into a `BufferedImage`.
-3. Planes that leave the app (Save CSV, Export) are first **quantized** to the CSV precision
-   (`PlaneCsvWriter.quantize`), so the exported video equals the demo's rendering of the saved
-   CSV byte for byte.
+   CSV row or three picked points load back into the sliders), and **interpolation between
+   planes happens in this space** (`lerp`: shortest arc for the angles, linear for the rest),
+   which keeps every in-between frame valid. The points themselves stay editable too (typed or
+   picked, ADR-0009); `makeIsosceles` turns clicked points into a valid plane.
+2. Everything in the 3-D view is drawn in software into `int[]` buffers (`Raster`: colour +
+   depth, lines and triangles; `Camera3D`: orthographic orbit camera), blitted once into a
+   `BufferedImage`. *v3.0 drew the volume as three textured mid-slices plus the plane textured
+   with its cut; v3.1 replaces that by the cut-open solid of ADR-0009, on the same buffers.*
+3. Planes that leave the app (Save CSV, Export) are written with **exact numbers** — the
+   shortest decimal that reads back to the same `double`
+   (`new BigDecimal(Double.toString(v)).toPlainString()`). The saved CSV therefore reads back to
+   bit-identical planes, and the exported video equals the demo's rendering of that CSV byte for
+   byte. `PlaneCsvWriter.quantize` (the plane exactly as the CSV reads back) stays the one place
+   that guarantees this; with exact numbers it returns an equal plane. *(v3.0 rounded to 6
+   decimals and rendered the rounded planes; the app's export of the lecturer's `head.csv` then
+   differed from his rows in one frame, so exact numbers replaced the rounding.)*
 
 ## Consequences
-+ No invalid plane can be produced by the UI; no "fix my points" dialogs.
++ The sliders cannot produce an invalid plane; picked points are made valid with one stated
+  change ("c moved along a→c").
 + Smooth videos from a handful of key planes (REQ-23) without a single invalid frame.
-+ Runs on any JDK 17+, Linux/Windows/macOS, headless CI builds it; `Raster`/`Camera3D`/`PlaneSpec`
-  port to Android with `core` (only the final blit is AWT).
-− The model is shown as three slices in a box, not a shaded surface; acceptable because the
-  object of the exercise is the cut, which is shown both on the plane and as an image. Ray
-  casting is future work.
-− Software rendering is CPU-bound: ~5–15 ms per frame at 800×600 on one core, fine for an
-  orbiting view; it would not do for a full-screen volume renderer.
++ Runs on any JDK 17+, Linux/Windows/macOS; headless CI builds it; `Raster`, `Camera3D`,
+  `PlaneSpec` port to Android with `core` (only the final blit is AWT).
+− Software rendering is CPU-bound; ADR-0009 lists the measures that keep the 3-D view
+  interactive.
 − Euler angles have a singularity at pitch ±90° (yaw and roll coincide); the sliders clamp pitch
   to ±90° and `fromPlane` resolves the ambiguity deterministically, which is enough for editing.
