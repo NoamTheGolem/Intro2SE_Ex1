@@ -16,6 +16,7 @@ did" column is how we made sure we can explain it.
 | 7 | 2026-10-23 | Usability | Added the window app (drag & drop, live playback, export) and the pure-Java MP4 writer so no ffmpeg or terminal is needed; verified the writer by decoding its output with ffmpeg pixel by pixel | We asked for an app that "just runs" after ffmpeg was missing on our PC |
 | 8 | 2026-10-25 | Review | Re-checked the solution against the PDF line by line and **found that it could not read the course's own `Ex0.csv`** (count column, quoted cells, two rows that break the rules). Fixed the reader, changed the policy to one frame per row with warnings (ADR-0003), added the 500³ phantom and the `Ex0` wrappers | We noticed the solution did not match the assignment and asked for a careful review |
 | 9 | 2026-11-03 | Course alignment | Read the course repo, syllabus, TA slides and the four class decks; restructured the documents to the lecturer's templates (SRS with use cases + traceability, SDD, EDD, STP/STD, ADRs, README template); added `Ex0.py`, `--threads` (`ParallelProjector`), `PlaneResolver` for the point-order question (ADR-0004), GitHub Actions CI on Linux + Windows, LICENSE, CONTRIBUTING, PR template | We asked for a full review against what the course intends; we set up the GitHub repository |
+| 10 | 2026-11-03 | **The app** | After we explained that the exercise is an *application* — load one of the lecturer's test models, cut it with a plane you place on the model, see the cut, then extract the video for his use cases — the AI replaced the small viewer with `StudioApp`: a 3-D model view (software z-buffer, no OpenGL), the cutting plane drawn on the model and textured with its cut, a plane editor (`PlaneSpec`: centre, yaw/pitch/roll, size; presets; wheel to slice), a use-case list with CSV load/save, interpolation and MP4 export; GUI test by `java.awt.Robot` on a virtual display; docs re-centred (SRS REQ-18…24, UC-02/05, SDD §4.1, ADR-0008, TESTING B.9/B.10) | We described what the app must do and checked it on the course CSV: the exported video reproduced by the demo byte for byte; the AI's first CSV writer was wrong (3 decimals, see EXPERIMENT §7) and we kept the fix as a test |
 
 ## What we verified ourselves
 
@@ -31,5 +32,11 @@ did" column is how we made sure we can explain it.
   never tested against the real file. Lesson: test against the teacher's artefacts first.
 * v1.0's fail-fast policy would have produced no video for a file with one bad row; item 7c
   asks for a frame per row.
+* v2.x treated the window app as an "extra" and the video command as the product; the exercise
+  is the other way round (the app that cuts and shows the model, then extracts the video for the
+  use cases). We said so; the AI rebuilt the front end and the documents around the app.
+* The app's first CSV writer rounded to 3 decimals, which broke the `EPS = 0.001` rule for
+  oblique planes on the way back in and made the reader choose a crossed pairing of the points.
+  Caught by rendering the exported CSV with the demo and comparing the frames.
 * A unit test expected `grey(150) == 128` for the window `[100, 200]`; 127.5 is a rounding tie
   that floating point resolves to 127. The test, not the code, was wrong.

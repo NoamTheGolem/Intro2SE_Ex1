@@ -13,3 +13,4 @@ number; superseded ones are kept and marked.
 | [0005](0005-built-in-mp4-writer.md) | Ship a dependency-free MP4 writer, use ffmpeg when present | Accepted |
 | [0006](0006-global-intensity-window.md) | One percentile window per video | Accepted |
 | [0007](0007-row-parallelism.md) | Parallelise by row blocks, default to one thread | Accepted |
+| [0008](0008-plane-spec-and-software-renderer.md) | Edit planes as centre + angles + size; draw the model with a software rasterizer | Accepted |

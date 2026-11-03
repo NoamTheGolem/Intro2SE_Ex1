@@ -117,7 +117,36 @@ free quality upgrade when there is FPS headroom.
 
 ![Nearest (left) vs trilinear (right), zoomed ×3](img/nearest_vs_trilinear.png)
 
-## 7. Other observations
+## 7. The app on the course's use case
+
+The app was driven by a `java.awt.Robot` script on a virtual display (the same steps as the
+manual script TESTING.md B.10) with `data/MRHead.nrrd` and the course's `Ex0.csv`:
+
+| Step | Observed |
+|------|----------|
+| Open sample | 256×256×130 INT16 loaded in 0.3 s; model with box, axes, three mid-slices; oblique plane 230×230 on it |
+| Load `Ex0.csv` | warning dialog with the two messages of rows 3–4 (same text as the demo); four lines in the list |
+| Row 2 (rectangle 500×400, plane y = 0…400 at x = 200) | the plane stands in the box and continues outside it; the cut shows the head in the upper-left part of a mostly black 501×401 image — exactly what the demo renders for that row |
+| Row 4 (trapezoid, rails read as `p1→p2, p3→p4`) | plane drawn with `a1 a2 b c` labels, 401×503 cut, status "valid" with the resolver's note |
+| Triangle preset + Add current | fifth line "added: Triangle 205x205 @ (128, 128, 65) yaw 35 pitch 25 roll 0"; cut 205×229 in 1.0 ms |
+| Frames between planes = 5, Play | the plane glides between the five entries; 31 frames, no invalid frame |
+| Export video… (15 fps) | 31 frames 502×504 in 0.9 s; `MRHead_usecase.mp4` (12.3 MB with the built-in writer, 150 KB when ffmpeg is present) + `MRHead_usecase.csv` |
+| `Ex0 data/MRHead.nrrd MRHead_usecase.csv x.mp4 --fps 15` | "Planes: 31", "Frames: 502x504", only the row-3 warning inherited from `Ex0.csv`; **decoded frames identical** to the app's export (`cmp` of 7 843 248 bytes) |
+
+![Row 2 of Ex0.csv in the app](img/app_row2.png)
+
+Interactive projection time on the 2-vCPU VM (status line, 2 threads): 1–2 ms for the 205×229
+triangle, 5–10 ms for the 401×503 trapezoid — i.e. the views follow the sliders at 100+ updates
+per second; the software-rendered model view costs another 5–15 ms per repaint.
+
+A detail the round trip caught: the first writer printed 3 decimals, which moved the two rails
+of an oblique trapezoid apart by ≈ 0.001 — exactly `EPS`. The reader then declared the row
+invalid and the resolver picked the *crossed* pairing of the four points, producing a bow-tie.
+Two fixes, both tested: 6 decimals in the writer (TC-48) and a rule that the rails of a
+trapezoid must not cross (TC-08). The app now renders planes quantized to the CSV precision, so
+the video and the CSV can never disagree (TC-86).
+
+## 8. Other observations
 
 1. **Anisotropic voxels (EDD D10).** MRHead has 1.3 mm spacing on one axis. Distances are
    measured in voxel units, as the assignment defines, so coronal views in the rotate video look
@@ -130,7 +159,10 @@ free quality upgrade when there is FPS headroom.
    built-in lossless writer; the 130-frame sweep grows from 1.8 MB to ~13 MB. Acceptable for a
    demo; ffmpeg is picked up automatically when installed.
 
-## 8. Future work
+## 9. Future work
 * GPU (CUDA) version — the course's Ex5 option 5.1; the row structure maps directly to a 2-D kernel.
 * Physical (mm) coordinates from `space origin` / `space directions`.
-* Android front end reusing `core` unchanged (interactive plane control as a game).
+* Android front end reusing `core`, `PlaneSpec` and `Raster` unchanged (interactive plane control
+  as a game).
+* Volume ray casting in the model view (a shaded surface instead of three slices).
+* Physical units in the app (mm sliders) once `space directions` are honoured.

@@ -2,7 +2,7 @@
 
 **Project:** Ex1 — Plane Projection of a 3D Volume
 **Course:** Introduction to Software Engineering (OOP/OOD), Ariel University, Prof. Boaz Ben-Moshe
-**Version:** 2.0 (baselined for submission) · **Status:** all requirements implemented and verified
+**Version:** 3.0 (baselined for submission; 3.0 adds the interactive app, §3.1 REQ-18…REQ-24, UC-02, UC-05) · **Status:** all requirements implemented and verified
 **Related documents:** [SDD](SDD.md) (architecture) · [ALGORITHM / EDD](ALGORITHM.md) (detailed design of the
 projection) · [STP/STD](TESTING.md) (tests) · [ADRs](adr/) · [Experiment](EXPERIMENT.md)
 
@@ -11,20 +11,25 @@ projection) · [STP/STD](TESTING.md) (tests) · [ADRs](adr/) · [Experiment](EXP
 ## 1. Introduction
 
 ### 1.1 Purpose
-This document specifies the requirements of a program that computes 2-D cross-section images
-("projections") of a 3-D volumetric image (MRI/CT in NRRD format) along arbitrary planes, and
-writes a sequence of such images as an MP4 video. It is the contract between the assignment
-sheet (`Ex1` PDF + Q&A) and the implementation, and every requirement below is traced to a design
-element and to a test (§5).
+This document specifies the requirements of an application that loads a 3-D volumetric image
+(MRI/CT in NRRD format), lets the user cut it with an arbitrary plane positioned on the model,
+shows the resulting 2-D cross-section ("projection"), and turns a list of such planes — a *use
+case* — into an MP4 video and the CSV of its planes. The same projection runs as the command-line
+demo of the assignment sheet. This document is the contract between the sheet (`Ex1` PDF + Q&A,
+the lecturer's Python prototype and example files) and the implementation; every requirement
+below is traced to a design element and to a test (§5).
 
 ### 1.2 Scope
-*In scope:* reading NRRD volumes; reading plane definitions from CSV; validating planes per the
-Q&A; computing projections with nearest-neighbour or trilinear sampling; mapping intensities to
-8-bit grey; writing MP4 (and optional PNG frames); a benchmark; synthetic test volumes; a small
-desktop viewer.
+*In scope:* a desktop app (open / drag-and-drop a volume, a 3-D view of the model with the
+cutting plane on it, a plane editor, the live cut, a use-case list with optional interpolation,
+CSV load/save, MP4 export); reading NRRD volumes; reading plane definitions from CSV; validating
+planes per the Q&A; computing projections with nearest-neighbour or trilinear sampling; mapping
+intensities to 8-bit grey; writing MP4 (and optional PNG frames); the command-line demo; a
+benchmark; synthetic test volumes.
 
 *Out of scope (non-goals):* physical/RAS (millimetre) coordinates; colour, vector or 4-D volumes;
-detached multi-file NRRD (`data file: LIST`); GPU acceleration; an Android front end (planned
+detached multi-file NRRD (`data file: LIST`); GPU acceleration and volume ray casting (the
+model view shows the volume's mid-slices, not a shaded surface); an Android front end (planned
 reuse of `core`, see SDD §7).
 
 ### 1.3 Definitions
@@ -50,29 +55,35 @@ reuse of `core`, see SDD §7).
 ## 2. Overall description
 
 ### 2.1 Product perspective
-A stand-alone command-line tool (the assignment's "demo main") plus an optional window app,
-both built on one reusable projection library (`core`). There is no server and no database.
+A stand-alone desktop app (the product) and the assignment's command-line "demo main", both
+built on one reusable projection library (`core`). One executable (`build/Ex0.jar`) contains
+both: no arguments opens the app, three arguments runs the demo. There is no server and no
+database.
 
 ```mermaid
 flowchart LR
-    U[Course staff / student] -- "Ex0 file.nrrd file.csv file.mp4" --> CLI[Ex0 demo]
-    U -- drag & drop / open --> GUI[Viewer app]
-    CLI --> CORE[(core: projection library)]
-    GUI --> CORE
-    NRRD[(NRRD volume)] --> CLI
-    CSV[(CSV planes)] --> CLI
-    CLI --> MP4[(MP4 video)]
+    U[Student / course staff] -- open, drag & drop, sliders, mouse --> GUI[The app: StudioApp]
+    U -- "Ex0 file.nrrd file.csv file.mp4" --> CLI[Ex0 demo]
+    GUI --> CORE[(core: projection library)]
+    CLI --> CORE
+    NRRD[(NRRD volume)] --> GUI
+    NRRD --> CLI
+    CSV[(CSV use case)] <--> GUI
+    CSV --> CLI
+    GUI --> MP4[(MP4 video + CSV)]
+    CLI --> MP4
 ```
 
 ### 2.2 User classes
 | User | Needs |
 |------|-------|
-| Course staff (grader) | Run the exact command of the sheet on their own files and get a correct video, with clear messages on bad input |
+| Course staff (grader) | Open the app, load one of their test volumes, cut it, see the cut, load their use-case CSV and get the video — or run the exact command of the sheet on their own files; clear messages on bad input either way |
 | Team members | Readable, tested code they can explain and extend (Android follow-up) |
 | Future Android app | A projection API with no desktop dependencies |
 
 ### 2.3 Operating environment
-Any OS with a Java 17+ runtime. Python 3 is used only by the `Ex0.py` launcher (standard library).
+Any OS with a Java 17+ runtime and a desktop (the app is Swing; the demo also runs headless).
+Python 3 is used only by the `Ex0.py` launcher (standard library).
 No other software is required: the MP4 encoder is built in (ffmpeg is used automatically when
 installed, for smaller files). Reference performance platform: a 2020+ laptop CPU, one thread.
 
@@ -113,7 +124,13 @@ installed, for smaller files). Reference performance platform: a 2020+ laptop CP
 | **REQ-15** | Options: `--interp nearest|trilinear`, `--fps N` (1–120, default 10), `--window LO HI`, `--frames DIR` (PNG per frame), `--threads N|auto`, `--strict`. Unknown options → usage message, exit 1. | Should |
 | **REQ-16** | A benchmark command shall report FPS for NN and TL sampling on a synthetic `N³` 8-bit volume (default 500³), single-threaded and with all cores. | Must |
 | **REQ-17** | Generators shall produce demo plane lists (sweep / rotate / tilt / triangle) and synthetic phantom volumes (uint8/16/32) whose cross-sections are known. | Should |
-| **REQ-18** | A window app shall open or accept a dropped `.nrrd`, play the projections live, allow loading a CSV, and export MP4 — using the same `core` code as the demo. | Could |
+| **REQ-18** | The app shall open a volume from a file dialog, from a `.nrrd`/`.nhdr` file dropped on the window or on the launcher icon, or the bundled sample; it shall show the volume's name, size and type and report unreadable files in a dialog. | Must |
+| **REQ-19** | The app shall show the model: the volume's bounding box with axes and its three middle slices, and the current cutting plane drawn on it in its true position and shape, textured with its own cut. The view shall orbit with the mouse, zoom with Ctrl+wheel, and reset on double-click. | Must |
+| **REQ-20** | The app shall show the cut of the current plane as a 2-D image identical to the video frame (REQ-09…REQ-13), with its size, validity and projection time, and shall update both views within one frame time after every change (NFR-01). | Must |
+| **REQ-21** | The plane shall be editable as centre (x, y, z), yaw / pitch / roll, width, height and top/bottom ratio (0 % = triangle, 100 % = rectangle), with presets XY / XZ / YZ / Triangle / Oblique, "slice through" steps and the mouse wheel moving the plane along its normal. Every edited plane shall be a valid plane of REQ-06, and its CSV row (REQ-04 format) shall be shown live. | Must |
+| **REQ-22** | The app shall keep an ordered *use-case list* of planes: add the current plane, replace, remove, move up/down, clear, select to view; load from a CSV in the course format (invalid rows kept and warned, as REQ-07) and save to it. | Must |
+| **REQ-23** | The app shall optionally insert *N* interpolated planes between consecutive list entries (shortest-arc rotation, linear position and size), every interpolated plane being valid, and shall preview the sequence (Play). | Should |
+| **REQ-24** | The app shall export the sequence as an MP4 (REQ-14, chosen fps) and write the CSV of the exported frames next to it, so that `Ex0 volume.nrrd that.csv out.mp4` reproduces the video byte for byte. | Must |
 
 ### 3.2 External interface requirements
 
@@ -157,7 +174,8 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | **NFR-05 Determinism** | Same inputs → byte-identical frames, regardless of thread count. | `ParallelProjectorTest`, CI frame diff |
 | **NFR-06 Portability** | Builds and tests pass on Linux and Windows with JDK 17 and 21, offline. | CI matrix |
 | **NFR-07 Maintainability** | Javadoc on every method; `-Xlint:all -Werror`; `core` free of desktop APIs. | Build, review |
-| **NFR-08 Usability** | A user without a terminal can run the viewer by double-click and get a video in ≤ 3 actions. | Manual test (Windows) |
+| **NFR-08 Usability** | A user without a terminal can start the app by double-click, see a cut of the sample in ≤ 2 actions and export a video of the course's use case in ≤ 4 actions. | Manual test script TC-90…TC-99 (Windows) |
+| **NFR-09 Portability of the UI** | The app uses only the JDK (Swing + a software renderer, no OpenGL/JavaFX) so it runs on any JDK 17+ and its model/plane code (`PlaneSpec`, `Raster`, `Camera3D`) has no desktop-only dependency beyond `java.awt.image` for the final blit. | Build, review |
 
 ---
 
@@ -173,15 +191,35 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
   3b. `--strict` and warnings → exit 2, no file. 5a. Output not writable → exit 3.
 * **Postcondition:** `out.mp4` has exactly one frame per CSV data row, in order.
 
-### UC-02 Explore a volume interactively (student / demo day)
-* **Actor:** student · **Precondition:** `Ex1 Viewer.bat` (or `Ex0.py` without arguments).
-* **Main flow:** 1. Student double-clicks the launcher. 2. Drops `MRHead.nrrd` on the window (or
-  Open NRRD / Open sample). 3. System loads it, builds "Rotate" planes and starts playing.
-  4. Student switches planes (Sweep/Tilt/Triangle/CSV), sampling and frame count; scrubs with
-  the slider. 5. Student clicks Export MP4 and chooses a file. 6. System writes it and offers to
-  open it.
-* **Alternatives:** 2a. Dropped file is a CSV before a volume → message. 4a. CSV with warnings →
-  dialog listing them, rows still shown. 5a. Export fails → error dialog.
+### UC-02 Cut a model and look at the cut (student / grader)
+* **Actor:** anyone with the app · **Precondition:** `Ex1 Viewer.bat` (or `Ex0.py` / the jar
+  without arguments); a `.nrrd` file (the grader's test subjects, or the bundled sample).
+* **Main flow:** 1. User double-clicks the launcher. 2. Drops the volume on the window (or Open
+  NRRD… / Open sample). 3. System loads it, shows the model (box, axes, mid-slices) with an
+  oblique plane on it and the cut of that plane on the right. 4. User positions the plane:
+  presets, sliders (centre, yaw/pitch/roll, width, height, top ratio), `<` `>` and the mouse
+  wheel to slice through, dragging the model to look from another side. 5. Both views follow
+  every change immediately; the status line shows size, validity and projection time; the CSV
+  row of the plane is shown.
+* **Alternatives:** 2a. Unreadable file → dialog naming the field (REQ-03). 2b. A CSV dropped
+  before any volume → message. 4a. Plane leaves the volume → the cut shows black where there is
+  no data (REQ-10), the model view shows the plane outside the box.
+* **Postcondition:** none (nothing is written).
+
+### UC-05 Build a use case and extract its video (student / grader)
+* **Actor:** anyone with the app · **Precondition:** UC-02 done (a volume is open).
+* **Main flow:** 1. User positions a plane and clicks **Add current**; repeats for every plane
+  of the use case — or clicks **Load use cases (CSV)…** and picks a file in the course format
+  (`Ex0.csv`). 2. The list shows one line per plane; clicking a line shows that plane on the
+  model and its cut. 3. Optionally the user sets **Frames between planes** for a smooth video and
+  **Play** previews the sequence. 4. User clicks **Export video…**, picks a file name and fps.
+  5. System renders every frame in the background with a progress bar, writes the MP4 and the
+  CSV of the frames next to it, and offers to open the video.
+* **Alternatives:** 1a. CSV with invalid rows → dialog listing the warnings; rows kept, invalid
+  ones become black frames / are projected anyway (REQ-07). 4a. Empty list → message. 5a. Not
+  writable → error dialog. 5b. ffmpeg absent → built-in encoder, larger file, same frames.
+* **Postcondition:** `name.mp4` + `name.csv`; `Ex0 volume.nrrd name.csv x.mp4` gives the same
+  frames.
 
 ### UC-03 Prove the performance requirement
 * **Actor:** team member / grader. **Flow:** `java -cp build/Ex0.jar ex1.app.Benchmark 500` →
@@ -216,7 +254,13 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | REQ-15 | UC-01 | `Ex0.parseArgs` | TC-35, TC-36 | Pass |
 | REQ-16 | UC-03 | `Benchmark` | CI benchmark job | Pass |
 | REQ-17 | UC-04 | `SweepGenerator`, `PhantomGenerator` | TC-30 (uses both), visual (EXPERIMENT §5) | Pass |
-| REQ-18 | UC-02 | `ViewerApp` | Manual test (Windows 11, JDK 25) | Pass |
+| REQ-18 | UC-02 | `StudioApp.openVolume`, `FileDrop`, `Ex1 Viewer.bat` | TC-90, TC-91 (manual), TC-37 | Pass |
+| REQ-19 | UC-02 | `VolumeView3D`, `Raster`, `Camera3D` (SDD §4.4, [ADR-0008](adr/0008-plane-spec-and-software-renderer.md)) | TC-92, TC-93 (manual) | Pass |
+| REQ-20 | UC-02 | `StudioApp.refreshViews`, `SliceView`, `FrameRenderer` | TC-94 (manual), TC-85 | Pass |
+| REQ-21 | UC-02 | `PlaneSpec` ([ADR-0008](adr/0008-plane-spec-and-software-renderer.md)) | TC-80–TC-84, TC-95 (manual) | Pass |
+| REQ-22 | UC-05 | `StudioApp` list model, `PlaneCsvReader`, `PlaneCsvWriter` | TC-48, TC-96, TC-97 (manual) | Pass |
+| REQ-23 | UC-05 | `PlaneSpec.lerp`, `StudioApp.expandedPlanes` | TC-84, TC-98 (manual) | Pass |
+| REQ-24 | UC-05 | `StudioApp.exportVideo`, `PlaneCsvWriter.quantize` | TC-86, TC-99 (manual + `cmp` of decoded frames) | Pass |
 | NFR-01 | UC-03 | EDD §4 cost model | Benchmark: 280–390 FPS NN single-thread | Pass |
 | NFR-02 | UC-03 | `ParallelProjector` | TC-56–TC-58, benchmark | Pass |
 | NFR-03 | — | `NrrdReader.readSamples` (1 MB chunks) | 1000³ run with `-Xmx2g` | Pass |
@@ -224,6 +268,7 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | NFR-05 | — | row independence (EDD §3) | TC-56, CI | Pass |
 | NFR-06 | — | scripts + vendored JUnit | CI matrix (2 OS × 2 JDK) | Pass |
 | NFR-07 | — | `-Werror` in `scripts/build.*` | Build | Pass |
-| NFR-08 | UC-02 | `ViewerApp`, `Ex1 Viewer.bat` | Manual | Pass |
+| NFR-08 | UC-02, UC-05 | `StudioApp`, `Ex1 Viewer.bat` | TC-90–TC-99 | Pass |
+| NFR-09 | UC-02 | `Raster` (software z-buffer), no JavaFX/OpenGL | Build on JDK 17/21/25 | Pass |
 
 TC numbers are defined in [TESTING.md §5 (STD)](TESTING.md).
