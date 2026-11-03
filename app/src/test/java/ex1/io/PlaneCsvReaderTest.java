@@ -143,4 +143,25 @@ public class PlaneCsvReaderTest
         assertFalse(read("# nothing\n").isValid());
         assertFalse(read("1,2,3\nabc\n").isValid());
     }
+
+    @Test
+    public void writerOutputSurvivesARoundTrip() throws IOException
+    {
+        // Oblique, fractional planes (as the app's interpolation produces) must read back as the
+        // same valid planes, not as a different reading of the points.
+        ex1.app.PlaneSpec spec = new ex1.app.PlaneSpec(101.234567, 77.7, 64.25, 33.3, -21.7, 12.1, 171.3, 0.62, 203.9);
+        Plane original = spec.toPlane();
+        assertTrue(original.validate(Plane.DEFAULT_EPS).toString(), original.validate(Plane.DEFAULT_EPS).isEmpty());
+        String row = ex1.io.PlaneCsvWriter.row(original);
+        PlaneCsvReader.Result r = read(row + "\n");
+        assertTrue(r.rows.get(0).warnings.toString(), r.rows.get(0).warnings.isEmpty());
+        assertEquals(original.imageWidth(), r.rows.get(0).plane.imageWidth());
+        assertEquals(original.imageHeight(), r.rows.get(0).plane.imageHeight());
+        assertEquals(original.a1().x, r.rows.get(0).plane.a1().x, 1e-6);
+        // The same plane rounded to 3 decimals (the old writer) would already break the EPS rule.
+        ex1.app.PlaneSpec tri = new ex1.app.PlaneSpec(50.5, 60.5, 70.5, 10, 20, 30, 120.7, 0.0, 99.9);
+        PlaneCsvReader.Result t = read(ex1.io.PlaneCsvWriter.row(tri.toPlane()) + "\n");
+        assertTrue(t.rows.get(0).warnings.toString(), t.rows.get(0).warnings.isEmpty());
+        assertTrue(t.rows.get(0).plane.isTriangle());
+    }
 }
