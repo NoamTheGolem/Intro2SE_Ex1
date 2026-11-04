@@ -4,7 +4,9 @@ rem Usage:  Ex0 file.nrrd file.csv file.mp4 [--interp trilinear] [--fps N] [--th
 rem With no arguments it opens the window app. Builds build\Ex0.jar first when it is missing (needs a JDK).
 setlocal
 set "JAVA="
-for /d %%D in ("%USERPROFILE%\.jdks\*") do if exist "%%D\bin\java.exe" set "JAVA=%%D\bin\java.exe"
+rem The Java runtime that ships with the app (runtime\) comes first: nothing to install.
+if exist "%~dp0runtime\bin\java.exe" set "JAVA=%~dp0runtime\bin\java.exe"
+if not defined JAVA for /d %%D in ("%USERPROFILE%\.jdks\*") do if exist "%%D\bin\java.exe" set "JAVA=%%D\bin\java.exe"
 if not defined JAVA if exist "%ProgramFiles%\Android\Android Studio\jbr\bin\java.exe" set "JAVA=%ProgramFiles%\Android\Android Studio\jbr\bin\java.exe"
 if not defined JAVA if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA=%JAVA_HOME%\bin\java.exe"
 if not defined JAVA for %%X in (java.exe) do set "JAVA=%%~$PATH:X"

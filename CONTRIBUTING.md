@@ -18,7 +18,17 @@ A change is done when:
 * the demo command `python Ex0.py file.nrrd file.csv file.mp4` still works;
 * the documents that describe the behaviour are updated in the same PR (SRS, SDD,
   ALGORITHM, TESTING, EXPERIMENT) and a new design decision got an ADR in `docs/adr/`;
-* every public method has Javadoc; `javac -Xlint:all -Werror` is clean (the build enforces it).
+* every public method has Javadoc; `javac -Xlint:all -Werror` is clean (the build enforces it);
+* **`build/Ex0.jar` is rebuilt (`scripts/build.*`) and committed** with any code change — it is
+  what `Ex1.exe` runs right after a download, with no JDK on the machine.
+
+## The download-and-run parts
+
+| Part | Rebuild with | When |
+|------|--------------|------|
+| `build/Ex0.jar` | `scripts/build.sh` / `build.bat` | every code change |
+| `Ex1.exe` (from `launcher/Ex1.c`, `ex1.rc`, `ex1.ico`) | `scripts/build_launcher.sh` (mingw-w64) | launcher changes only |
+| `runtime/` (Windows x64 Java, jlink) | `JMODS=<Windows JDK 25>/jmods scripts/make_runtime.sh` | a new Java version, or the app needs another module (`jdeps --print-module-deps build/Ex0.jar`) |
 
 ## Code style
 

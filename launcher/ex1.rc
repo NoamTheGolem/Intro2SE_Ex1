@@ -1,0 +1,28 @@
+// Resources of Ex1.exe: the icon and the version information Windows shows in Properties.
+#include <winver.h>
+
+1 ICON "ex1.ico"
+
+1 VERSIONINFO
+FILEVERSION 3, 1, 0, 0
+PRODUCTVERSION 3, 1, 0, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Ex1 - plane projection of a 3-D volume"
+            VALUE "ProductName", "Ex1 Plane Projection"
+            VALUE "FileVersion", "3.1"
+            VALUE "ProductVersion", "3.1"
+            VALUE "OriginalFilename", "Ex1.exe"
+            VALUE "LegalCopyright", "MIT License"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -25,3 +25,9 @@ SOFTWARE.
 Third-party data: data/MRHead.nrrd is the "MRHead" sample volume of the 3D Slicer project
 (https://github.com/Slicer/SlicerTestingData), distributed under the 3D Slicer license
 (BSD-style). It is included unchanged for the course demo only.
+
+Third-party runtime: runtime/ is a Java runtime image of OpenJDK 25.0.1 for Windows x64, made with
+jlink (modules java.base, java.datatransfer, java.desktop, java.prefs, java.xml). OpenJDK is licensed
+under the GNU General Public License, version 2, with the Classpath Exception; its license and
+third-party notices are in runtime/legal/. It is included unchanged so the app runs without a
+separate Java installation.

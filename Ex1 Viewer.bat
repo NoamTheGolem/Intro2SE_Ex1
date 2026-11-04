@@ -1,11 +1,13 @@
 @echo off
 rem Double-click: opens the Ex1 window app.  Drag a .nrrd file onto this icon: opens that file.
-rem Finds Java by itself (IntelliJ .jdks, Android Studio, JAVA_HOME, Program Files, PATH) and builds
-rem build\Ex0.jar first when it is missing (needs a JDK).
+rem Uses the Java runtime in runtime\ (shipped with the app); otherwise finds Java by itself
+rem (IntelliJ .jdks, Android Studio, JAVA_HOME, Program Files, PATH). Ex1.exe does the same.
 setlocal EnableDelayedExpansion
 set "JAR=%~dp0build\Ex0.jar"
 set "JW="
-for /d %%D in ("%USERPROFILE%\.jdks\*") do if exist "%%D\bin\javaw.exe" set "JW=%%D\bin\javaw.exe"
+rem The Java runtime that ships with the app (runtime\) comes first: nothing to install.
+if exist "%~dp0runtime\bin\javaw.exe" set "JW=%~dp0runtime\bin\javaw.exe"
+if not defined JW for /d %%D in ("%USERPROFILE%\.jdks\*") do if exist "%%D\bin\javaw.exe" set "JW=%%D\bin\javaw.exe"
 if not defined JW if exist "%ProgramFiles%\Android\Android Studio\jbr\bin\javaw.exe" set "JW=%ProgramFiles%\Android\Android Studio\jbr\bin\javaw.exe"
 if not defined JW if defined JAVA_HOME if exist "%JAVA_HOME%\bin\javaw.exe" set "JW=%JAVA_HOME%\bin\javaw.exe"
 if not defined JW for /d %%D in ("%ProgramFiles%\Java\*" "%ProgramFiles%\Eclipse Adoptium\*" "%ProgramFiles%\Microsoft\*") do if exist "%%D\bin\javaw.exe" set "JW=%%D\bin\javaw.exe"

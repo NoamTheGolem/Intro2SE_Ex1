@@ -4,8 +4,8 @@
     python Ex0.py file.nrrd file.csv file.mp4 [options]
 
 The projection itself is implemented in Java (build/Ex0.jar). This script only finds a Java
-runtime (JDK/JRE 17+) and hands the arguments over, so the grader can use the command from the
-assignment sheet without caring about the implementation language. With no arguments it opens
+runtime - the one shipped in runtime/ on Windows, else any JDK/JRE 17+ - and hands the arguments
+over, so the grader can use the command from the assignment sheet without installing anything. With no arguments it opens
 the window app. Options are passed through unchanged (see README: --interp, --fps, --window,
 --frames, --threads, --strict).
 
@@ -27,6 +27,8 @@ EXIT_NO_JAVA = 4
 def candidate_javas():
     """Yield possible java executables, most specific first."""
     exe = "java.exe" if os.name == "nt" else "java"
+    # The runtime that ships with the app (runtime/, Windows) first: nothing to install.
+    yield os.path.join(HERE, "runtime", "bin", exe)
     java_home = os.environ.get("JAVA_HOME")
     if java_home:
         yield os.path.join(java_home, "bin", exe)

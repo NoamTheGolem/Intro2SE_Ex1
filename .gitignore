@@ -1,5 +1,7 @@
-# build outputs (the jar is rebuilt by scripts/build.*, Ex0.py or Gradle)
-build/
+# build outputs - except build/Ex0.jar, which is committed so the app runs right after a
+# download (Ex1.exe + runtime/ need no JDK; rebuild it with scripts/build.* after code changes)
+build/*
+!build/Ex0.jar
 */build/
 out/
 *.class
