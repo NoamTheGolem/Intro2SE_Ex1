@@ -15,3 +15,4 @@ number; superseded ones are kept and marked.
 | [0007](0007-row-parallelism.md) | Parallelise by row blocks, default to one thread | Accepted |
 | [0008](0008-plane-spec-and-software-renderer.md) | Edit planes as centre + angles + size; draw the 3-D view with a software renderer; write exact numbers | Accepted; part 2 superseded by 0009 |
 | [0009](0009-cut-open-solid-and-point-picking.md) | Show the scan as a solid cut open by the plane; choose the plane by picking 3 points on the three standard views | Accepted |
+| [0010](0010-ship-the-java-runtime.md) | Ship the app with its own Java runtime and a native launcher: download and run | Accepted |

@@ -78,7 +78,8 @@ scripts\test.bat           # Windows
 ./gradlew test             # or Gradle (downloads Gradle once; tests still offline)
 java -cp build/Ex0.jar ex1.app.Benchmark 500
 ```
-Result at submission: **90 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present).
+Result at submission: **90 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present). On the
+CI Windows runner the demo step goes through `python Ex0.py`, which uses the bundled `runtime/`.
 
 ---
 
@@ -229,3 +230,4 @@ Data: the lecturer's scans from his Drive folder (`MRHead_1`, `onion`, `swiss_ro
 | TC-103 | Export video… → default name; then `Ex0 <scan> <name>.csv x.mp4` | progress bar, MP4 + CSV written, "open now?" plays; the demo prints the same frame count and size; decoded frames identical (`ffmpeg -f rawvideo` + `cmp`) |
 | TC-104 | drop a `.txt` file; Open NRRD… on a non-NRRD | friendly dialog, app keeps running |
 | TC-105 | repeat TC-92, TC-97 and TC-99 with `onion`, `swiss_roll`, `biscuit_cake`, `croissant` | each object appears cut open with the default surface; its use case loads without warning; the croissant (500³) model is ready within ~3 s |
+| TC-106 | **download and run** (NFR-11): on a Windows PC *without Java*, download the repository ZIP, unzip, double-click `Ex1.exe`; drop `MRHead_1.nrrd` on `Ex1.exe`; run `python Ex0.py data\dice.nrrd data\course\edge_cases.csv x.mp4` | the app opens (no console window, no question about Java); the dropped scan opens; the demo writes 16 frames. *Smoke test without such a PC (4 Nov): the bundled runtime under Wine prints `openjdk version "25.0.1"`, writes the edge-case MP4 **byte for byte equal** to the Linux JDK's, and `Ex1.exe <scan>` opens the app with the head cut open* |

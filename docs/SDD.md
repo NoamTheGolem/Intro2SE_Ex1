@@ -19,7 +19,8 @@ correct and robust on any input, exactly as the lecturer's test files expect (SR
 NFR-04) · ≥ 30 FPS single-threaded on 500³ (NFR-01) · readable, tested, explainable code ·
 reusable on Android later.
 
-**Non-goals:** CSV points in millimetres, colour volumes, GPU, networking.
+**Non-goals:** CSV points in millimetres, colour volumes, GPU, networking. **Constraint from the team:**
+it must run straight after download — nothing to install (ADR-0010).
 
 ## 2. Context diagram (C4 level 1)
 
@@ -371,9 +372,13 @@ sequenceDiagram
 
 ## 7. Deployment
 
-* **Desktop:** one jar `build/Ex0.jar` (built by `scripts/build.*`, `Ex0.py`, or Gradle); launched
-  by `Ex0.py` / `Ex0.bat` / `Ex1 Viewer.bat`, which locate a JDK (IntelliJ `.jdks`, Android Studio
-  `jbr`, `JAVA_HOME`, `PATH`).
+* **Desktop (Windows): download and run** ([ADR-0010](adr/0010-ship-the-java-runtime.md)). The
+  repository carries everything the app needs: `Ex1.exe` (a small Win32 launcher, `launcher/Ex1.c`),
+  `runtime/` (OpenJDK 25.0.1 for Windows x64 cut to `java.base` + `java.desktop` by `jlink`, 47 MB)
+  and the compiled `build/Ex0.jar`. `Ex1.exe` starts `runtime\bin\javaw.exe -jar build\Ex0.jar`;
+  `Ex1 Viewer.bat`, `Ex0.bat` and `Ex0.py` also try `runtime/` first, then a JDK on the machine
+  (IntelliJ `.jdks`, Android Studio `jbr`, `JAVA_HOME`, `PATH`).
+* **Desktop (Linux/macOS):** the same jar on any Java 17+ (`./Ex0`, `python Ex0.py`).
 * **CI:** GitHub Actions, matrix {ubuntu, windows} × {JDK 17, 21}: build with `-Werror`, 90 unit
   tests (including the lecturer's edge cases), the demo command on the course CSV and on the
   edge cases with frame-count checks, a strict-mode failure check, and a 500³ benchmark gate
@@ -394,13 +399,15 @@ sequenceDiagram
 | Grey mapping | one percentile window per video | per-frame min/max | no flicker; outliers ignored | [0006](adr/0006-global-intensity-window.md) |
 | Parallelism | row blocks on a fixed pool, default 1 thread | always all cores; per-pixel tasks | requirement is single-threaded; rows independent → identical output | [0007](adr/0007-row-parallelism.md) |
 | Moving a plane; drawing in 3-D; CSV numbers | `PlaneSpec`; software buffers; exact numbers | moving raw points; JavaFX 3D / JOGL; fixed decimals | points break the isosceles rule when moved; no native jars; bit-exact round trips | [0008](adr/0008-plane-spec-and-software-renderer.md) |
+| Getting it to run | the Java runtime (`jlink`, 47 MB), the jar and a native `Ex1.exe` in the repository | "install Java 17+"; a jpackage installer; a full JRE; a release asset only | the requirement: download and run, nothing to install | [0010](adr/0010-ship-the-java-runtime.md) |
 | What the 3-D view shows; how a plane is chosen | the scan as a solid, cut open by the plane, ray cast on the CPU; picking 3 points on Axial/Coronal/Sagittal or on the object | mid-slices in a box (our v3.0); marching cubes; translucent volume rendering; typing coordinates only | what the lecturer asked for: choose 3 points and see how the object looks inside that cut, like a pie cut in the middle | [0009](adr/0009-cut-open-solid-and-point-picking.md) |
 
 ## 9. Risks and trade-offs
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Grader's machine has no Java | demo does not run | launcher prints a clear message with the download link; README quick start; CI proves it on clean Windows/Linux images |
+| Grader's machine has no Java | demo does not run | Windows: Java ships with the app (`runtime/`, ADR-0010); other OSes: the launcher prints a clear message with the download link; CI proves it on clean Windows/Linux images |
+| `Ex1.exe` is not code-signed | SmartScreen may ask once on a downloaded copy | README says what to click; `Ex1 Viewer.bat` and `python Ex0.py` are alternatives |
 | Built-in MP4 files are large (~1.5 B/pixel/frame) | a 500-frame 500² video ≈ 190 MB | ffmpeg path used automatically when present; `--fps`/frame count under user control; documented |
 | The surface threshold does not suit a scan | holes in the skin or a "fog" of noise in the 3-D view | Otsu default (works on all five lecturer scans), Surface slider, speck removal; the cut itself never depends on it |
 | A large scan (500³) | slower model (2.6 s) and renders | model at ≤ 256³, built in the background, block skipping, half resolution while moving |

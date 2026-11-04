@@ -12,7 +12,7 @@ the command-line demo the assignment asks for (`python Ex0.py file.nrrd file.csv
 
 **Course:** Introduction to Software Engineering (OOP/OOD), Ariel University — Exercise 1
 **Team:** *<name 1 — ID>*, *<name 2 — ID>*
-**Status:** complete; 90 automated tests incl. the lecturer's own edge cases; CI on Linux and Windows (JDK 17 and 21)
+**Status:** complete; runs on Windows straight after download (Java included); 90 automated tests incl. the lecturer's own edge cases; CI on Linux and Windows (JDK 17 and 21)
 
 ![The app: three points picked (a on the sagittal view, b and c on the axial view); the head cut
 open there with the brain on the cut face; the cut as the video frame; Axial, Coronal and
@@ -43,13 +43,20 @@ a detailed design is needed"; the design is the point of this repository.
 
 ---
 
-## Quick start
+## Quick start — download and run, nothing to install
 
-Requirements: **Java 17+** (JDK or JRE). Nothing else — the MP4 encoder is built in.
+**Windows:** download the repository (**Code → Download ZIP**, or `git clone`), unzip, and
+double-click **`Ex1.exe`**. That's all: the app brings its own Java (`runtime/`, a 47 MB OpenJDK 25
+runtime made by `jlink`) and its compiled code (`build/Ex0.jar`), so there is no Java to install,
+nothing to build and no ffmpeg — the MP4 encoder is built in. Dropping a `.nrrd` file on `Ex1.exe`
+opens it. *(Windows may show "Windows protected your PC" for a program downloaded from the
+internet: More info → Run anyway. The exe is not code-signed.)*
 
-**Windows:** download / clone, double-click **`Ex1 Viewer.bat`**. The first start compiles
-`build/Ex0.jar` if it is missing (needs a JDK; IntelliJ's and Android Studio's JDKs are found
-automatically). **Any OS:** `python Ex0.py` with no arguments, or `java -jar build/Ex0.jar`.
+The assignment's command works the same way, with the bundled Java:
+`python Ex0.py file.nrrd file.csv file.mp4` (or `Ex0.bat …`).
+
+**Linux / macOS:** the bundled runtime is for Windows; with any Java 17+ installed, `./Ex0` or
+`python Ex0.py` with no arguments opens the app, with three arguments runs the demo.
 
 Then open a scan: **Open NRRD…**, drop a `.nrrd` on the window, or **Samples** (MRHead + the
 course's `Ex0.csv`; the die + the lecturer's edge cases; a 500³ phantom). The lecturer's five test
@@ -137,7 +144,7 @@ LECTURER=~/Downloads/his_folder scripts/render_demo_videos.sh                  #
 
 There is no configuration file. Everything is in the window or a command-line option. Memory:
 `Ex0.py` / `Ex0.bat` / `Ex0` start Java with `-Xmx2g`, enough for a 1000³ 8-bit volume; the app
-(`Ex1 Viewer.bat`) uses Java's default, a quarter of the RAM — plenty for the lecturer's 500³
+(`Ex1.exe`, `Ex1 Viewer.bat`) uses Java's default, a quarter of the RAM — plenty for the lecturer's 500³
 croissant. Use `java -Xmx… -jar build/Ex0.jar` for 16/32-bit volumes of 1000³.
 
 ## Tests
@@ -191,7 +198,11 @@ will port to Android with `core`.
 ## Project structure
 
 ```
+Ex1.exe                                    the app on Windows: double-click (uses runtime/ + build/Ex0.jar)
 Ex1 Viewer.bat · Ex0.py · Ex0.bat · Ex0    entry points: no arguments = the app, 3 arguments = the demo (item 7)
+runtime/  the Java runtime that ships with the app (Windows x64, OpenJDK 25.0.1, jlink: java.base + java.desktop)
+build/Ex0.jar   the compiled app (committed, so nothing has to be built)
+launcher/ source of Ex1.exe (C, Win32) and its icon      scripts/ build, test, launcher and runtime scripts
 core/   pure Java (no java.io / AWT) -> reusable on Android
   ex1.core   Vec3, Volume (+Byte/Short/Int/Float), Plane, PlaneResolver,
              Projector (+Nearest/Trilinear/Parallel), Image2D, IntensityWindow
@@ -202,7 +213,7 @@ app/    desktop side
              Ex0 (demo main), FrameRenderer, Benchmark, SweepGenerator, PhantomGenerator
 data/   dataset (data/README.md): MRHead.nrrd, dice.nrrd, phantoms, Ex0.csv, course/ (the lecturer's CSVs), plane lists
 docs/   SRS.md · SDD.md · ALGORITHM.md (EDD) · TESTING.md (STP/STD) · EXPERIMENT.md · AI_USAGE.md · adr/
-results/ output videos      scripts/ build & test scripts      lib/ JUnit 4 jars (offline tests)
+results/ output videos      lib/ JUnit 4 jars (offline tests)
 ```
 
 ## Documents (To-Do items 1–8)
@@ -212,9 +223,9 @@ results/ output videos      scripts/ build & test scripts      lib/ JUnit 4 jars
 | 1 Problem & scope | this README |
 | 2 SRS | [docs/SRS.md](docs/SRS.md) — requirements with IDs, use cases, traceability matrix |
 | 3 Main algorithm | [docs/ALGORITHM.md](docs/ALGORITHM.md) — EDD: exact spec, 14 design decisions, validation rules, alternatives, error handling, budget |
-| — Architecture | [docs/SDD.md](docs/SDD.md) — C4 diagrams, class/sequence diagrams, rationale, risks · [docs/adr/](docs/adr/) — 9 decision records |
+| — Architecture | [docs/SDD.md](docs/SDD.md) — C4 diagrams, class/sequence diagrams, rationale, risks · [docs/adr/](docs/adr/) — 10 decision records |
 | 4 Dataset | [data/README.md](data/README.md) — incl. the lecturer's test data |
-| 5 Testing strategy | [docs/TESTING.md](docs/TESTING.md) — STP + STD (TC-01 … TC-105), incl. the lecturer's edge cases, the demo and the app |
+| 5 Testing strategy | [docs/TESTING.md](docs/TESTING.md) — STP + STD (TC-01 … TC-106), incl. the lecturer's edge cases, the demo and the app |
 | 6 Implementation | `core/`, `app/`; commit history of this repository |
 | 7 Demo | `python Ex0.py file.nrrd file.csv file.mp4` (above) — and the app's **Export video…** |
 | 8 Experiment | [docs/EXPERIMENT.md](docs/EXPERIMENT.md) + [results/](results/) |
@@ -228,5 +239,6 @@ disclosure), review by the other team member, CI green, docs updated in the same
 ## License
 
 [MIT](LICENSE). `data/MRHead.nrrd` is 3D Slicer sample data (BSD-style license), included
-unchanged for the course demo. The lecturer's CSVs in `data/course/` are his course material,
+unchanged for the course demo. `runtime/` is OpenJDK (GPL v2 with the Classpath Exception; notices
+in `runtime/legal/`). The lecturer's CSVs in `data/course/` are his course material,
 included unchanged as test data.

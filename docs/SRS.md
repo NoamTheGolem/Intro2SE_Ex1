@@ -5,7 +5,7 @@
 **Version:** 3.1 · 3.0 added the interactive app (REQ-18…REQ-24, UC-02, UC-05); **3.1** aligns the
 CSV rules with the lecturer's test data (REQ-04…REQ-07), shows the scan as a solid cut open by the
 plane (REQ-19), and adds Slicer's three views, choosing the plane by 3 points and the lecturer's
-use cases (REQ-25…REQ-27) · **Status:** all requirements implemented and verified
+use cases (REQ-25…REQ-27); 3.1.1 (4 Nov) adds NFR-11: download and run, nothing to install · **Status:** all requirements implemented and verified
 **Related documents:** [SDD](SDD.md) (architecture) · [ALGORITHM / EDD](ALGORITHM.md) (detailed design of the
 projection) · [STP/STD](TESTING.md) (tests) · [ADRs](adr/) · [Experiment](EXPERIMENT.md)
 
@@ -96,7 +96,8 @@ flowchart LR
 | Future Android app | A projection API with no desktop dependencies |
 
 ### 2.3 Operating environment
-Any OS with a Java 17+ runtime and a desktop (the app is Swing; the demo also runs headless).
+**Windows x64: nothing** — the app ships its own Java runtime (`runtime/`) and launcher (`Ex1.exe`).
+Other OSes: any Java 17+ runtime and a desktop (the app is Swing; the demo also runs headless).
 Python 3 is used only by the `Ex0.py` launcher (standard library).
 No other software is required: the MP4 encoder is built in (ffmpeg is used automatically when
 installed, for smaller files). Reference performance platform: a 2020+ laptop CPU, one thread.
@@ -104,7 +105,8 @@ installed, for smaller files). Reference performance platform: a 2020+ laptop CP
 ### 2.4 Constraints
 * C-1 Language from the allowed list: **Java** ([ADR-0001](adr/0001-java-with-python-launcher.md)).
 * C-2 `core` uses only `java.lang`, `java.util`, `java.util.concurrent` ([ADR-0002](adr/0002-core-app-split.md)).
-* C-3 No third-party runtime libraries; build works offline (JUnit jars are vendored in `lib/`).
+* C-3 No third-party runtime libraries; build works offline (JUnit jars are vendored in `lib/`). The
+  bundled `runtime/` is the JDK's own runtime, cut down by `jlink` ([ADR-0010](adr/0010-ship-the-java-runtime.md)).
 * C-4 Volume stored once, at native sample width (a 1000³ 8-bit volume = 1 GB).
 
 ### 2.5 Assumptions
@@ -206,6 +208,7 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | **NFR-07 Maintainability** | Javadoc on every method; `-Xlint:all -Werror`; `core` free of desktop APIs. | Build, review |
 | **NFR-08 Usability** | A user without a terminal can start the app by double-click, see a scan cut open in ≤ 2 actions, choose a cut by 3 points in ≤ 4 clicks, and export a video of the lecturer's use case in ≤ 4 actions. | Manual test script TC-91…TC-105 (Windows) |
 | **NFR-09 Portability of the UI** | The app uses only the JDK (Swing + a software renderer, no OpenGL/JavaFX) so it runs on any JDK 17+; its model/plane code (`PlaneSpec`, `Raster`, `Camera3D`, `SolidModel`, `CutawayRenderer`) has no desktop-only dependency beyond `java.awt.image` for the final blit. | Build, review |
+| **NFR-11 Download and run** | On Windows x64 the app shall start by double-clicking `Ex1.exe` right after downloading (and unzipping) the repository, with no Java installation, no build step and no other software; `python Ex0.py …` and `Ex0.bat …` shall likewise run with only the files of the repository. | TC-106 (manual, a PC without Java; Wine smoke test), CI Windows demo step |
 | **NFR-10 Interactivity of the 3-D view** | On a 256×256×130 scan the cut-open view shall redraw at ≥ 10 frames per second while the plane or camera moves (half resolution), and sharpen to full resolution within 0.5 s after the last change; the solid model of a 256×256×130 scan shall be ready within 2 s, in the background. | EXPERIMENT §7 (measured on a 2-vCPU VM) |
 
 ---
@@ -226,7 +229,7 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 ### UC-02 Choose a cut and look inside the object (student / grader)
 * **Actor:** anyone with the app · **Precondition:** `Ex1 Viewer.bat` (or `Ex0.py` / the jar
   without arguments); a `.nrrd` file (the lecturer's test scans, or a bundled sample).
-* **Main flow:** 1. User double-clicks the launcher. 2. Drops the scan on the window (or Open
+* **Main flow:** 1. User double-clicks `Ex1.exe` (nothing installed before). 2. Drops the scan on the window (or Open
   NRRD… / Samples). 3. System loads it, shows the Axial, Coronal and Sagittal views, the cut of a
   default triangle, and — once the solid model is built (≈ 1 s) — the object in 3-D, cut open by
   that triangle. 4. User clicks **Pick a, b, c** and clicks three spots on the slice views
@@ -308,6 +311,7 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | NFR-07 | — | `-Werror` in `scripts/build.*` | Build | Pass |
 | NFR-08 | UC-02, UC-05 | `StudioApp`, `Ex1 Viewer.bat` | TC-91–TC-105 | Pass |
 | NFR-09 | UC-02 | `Raster`, `CutawayRenderer` (software), no JavaFX/OpenGL | Build on JDK 17/21/25 | Pass |
-| NFR-10 | UC-02 | `VolumeView3D` (half resolution while moving), `CutawayRenderer` (thread pool, block skipping) | EXPERIMENT §7: 4–7 ms half / 14–26 ms full, model 0.55–0.92 s | Pass |
+| NFR-10 | UC-02 | `VolumeView3D` (half resolution while moving), `CutawayRenderer` (thread pool, block skipping) | EXPERIMENT §8: 4–7 ms half / 14–26 ms full, model 0.55–0.92 s | Pass |
+| NFR-11 | UC-01, UC-02 | `runtime/` (jlink), `Ex1.exe` (`launcher/Ex1.c`), committed `build/Ex0.jar`, launchers prefer `runtime/` ([ADR-0010](adr/0010-ship-the-java-runtime.md)) | TC-106, CI Windows demo step | Pass |
 
 TC numbers are defined in [TESTING.md §5 (STD)](TESTING.md).
