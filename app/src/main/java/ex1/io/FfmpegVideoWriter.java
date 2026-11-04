@@ -43,7 +43,10 @@ public final class FfmpegVideoWriter implements VideoWriter
         }
         this.output = output;
         this.frameBytes = width * height;
-        this.log = File.createTempFile("ex1-ffmpeg", ".log");
+        // A plain unique name instead of File.createTempFile: that one seeds a SecureRandom first,
+        // which enumerates the network adapters - slow on some Windows machines, for a log name.
+        this.log = new File(System.getProperty("java.io.tmpdir"),
+                "ex1-ffmpeg-" + ProcessHandle.current().pid() + "-" + System.nanoTime() + ".log");
         this.log.deleteOnExit();
 
         List<String> cmd = new ArrayList<String>();
