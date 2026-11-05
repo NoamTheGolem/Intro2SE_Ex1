@@ -4,7 +4,7 @@
 the lecturer's data as acceptance tests — B.2, B.4 `EdgeCasesTest`, B.5 — the cut-open 3-D view
 and point picking — B.10 — and a new manual script, B.11; 3.2 tests the video = what Play shows:
 `SweepTest`, TC-107…TC-109; 3.3 the export on a PC with a broken ffmpeg — `VideoWritersTest`,
-TC-110…TC-113 — the export's names and messages, TC-114…TC-115, and the points-only screen in B.11)
+TC-110…TC-113 — the export's names and messages, TC-114…TC-115, and the points-only screen in B.11; 3.3.1: no Cut open / Samples, the system's file dialogs, TC-94, TC-101)
 **Verifies:** every REQ/NFR of the [SRS](SRS.md) (traceability in SRS §5) · **Design under test:** [SDD](SDD.md), [EDD](ALGORITHM.md)
 
 ---
@@ -229,14 +229,14 @@ Data: the lecturer's scans from his Drive folder (`MRHead_1`, `onion`, `swiss_ro
 | TC-91 | double-click `Ex1 Viewer.bat` (first time without `build/Ex0.jar`) | console builds the jar, the window opens with the drop hint; second start opens at once |
 | TC-92 | drop `MRHead_1.nrrd` on the window (or Open NRRD…) | status "MRHead_1.nrrd 256x256x130 INT16, voxel 1.00 x 1.00 x 1.30 mm"; picture 1/4: a default triangle's cut (Axial/Coronal/Sagittal with A/P/R/L/S/I labels one arrow away); about a second later the head in 3-D, cut open by the triangle, brain visible on the cut face |
 | TC-93 | drag in the 3-D view; Ctrl+wheel; wheel; double-click | the object orbits (coarse while dragging, sharp a moment later); zooms; the plane slides through the head and the cut face changes; the camera resets |
-| TC-94 | untick **Cut open** | the whole head; tick again → cut open; there is no Surface control (automatic, ADR-0012) |
+| TC-94 | look at the toolbar; drop `onion.nrrd` from the file manager anywhere on the window (on the controls too) | only **Open NRRD…** and the FPS: no Cut open, Surface or Samples (ADR-0012, ADR-0013); the onion opens, always cut open |
 | TC-95 | the toolbar's **Projection: N FPS**; slide the plane with the wheel | the speed of the current cut (≈ 1000–4000 FPS on a laptop for MRHead), steady to within a few hundred while nothing changes; all views update |
 | TC-96 | the picture panel's **▶** four times, then **◀** once; move each view's slider | 1/4 the cut → 2/4 Axial → 3/4 Coronal → 4/4 Sagittal → 1/4 the cut; ◀ from the cut → 4/4 Sagittal; the slider changes that view's slice and the orange line moves with the plane |
 | TC-97 | **Pick a, b, c** while the cut is on show, then click three spots on the Axial picture (or flip to another view first) | the panel turns to Axial by itself; the prompt names the next point; after the third click: "Clicks are never exact, so c was moved a little along the line a-c to make the triangle isosceles." — no numbers; the head cut open there, camera facing the cut; the panel back on the cut (stays on the view if you flipped it yourself) |
 | TC-98 | **4 points (trapezoid)**; then **Pick a1, a2, b, c** and four clicks on the Axial picture | the button stays on 4 points (the 3.2 bug), rows a1, a2, b, c, the cut becomes a trapezoid; after four clicks the nearest isosceles trapezoid in that slice, its cut = the slice inside the trapezoid; **3 points** turns it back into a triangle |
 | TC-99 | pick on the 3-D object (surface, then cut face); a single point's **pick**; type coordinates + Enter; type a triangle that is not isosceles; three points on one line | the point lands where clicked; only that point changes; typed values used; "Not isosceles (drawn as given): …" with a **Make isosceles** button, which fixes it and disappears; collinear points → black cut and "points a, b, c are collinear (no plane)" next to the points |
 | TC-100 | drop a `.csv` on the window | "Lists of planes (CSV) are for the command line: python Ex0.py scan.nrrd that.csv out.mp4"; nothing else changes |
-| TC-101 | **Samples** in the app download / in the repository | only the scans that are there: MRHead, Dice, the lecturer's (download), the 500³ phantom (repository); each opens with the default triangle |
+| TC-101 | **Open NRRD…** | the system's own dialog (Windows: Explorer's, starting in Downloads, or in the open scan's folder), showing `.nrrd`/`.nhdr` files; any drive or folder; the chosen scan opens with the default triangle. *5 Nov under Wine: the Windows dialog opened in Downloads, a pasted path `Z:\…\onion.nrrd` opened the onion; the Save dialog of Export proposed `onion_cut.mp4`, then `onion_cut_2.mp4`* |
 | TC-102 | **Play**, wait, **Stop** | the plane moves through the scan from the current plane, turns at either end and runs back; "frame i of n" under the cut; Stop keeps that frame |
 | TC-103 | **Export video…** → Enter; again → Enter; replace a video that is open in a player; then `ffprobe` | `MRHead_cut.mp4`, then `MRHead_cut_2.mp4` proposed; the open one → "The file is open in another program …"; 10 fps, one frame per sweep step (5 Nov: MRHead 169, 4-point trapezoid 127). Under Wine with a fake `ffmpeg.exe` that fails: the video is still written, with "The ffmpeg on this computer did not work, so the app's own encoder made the video." |
 | TC-104 | drop a `.txt` file; Open NRRD… on a non-NRRD | friendly dialog, app keeps running |

@@ -5,7 +5,7 @@ course's point order and row classes, the cut-open solid, Slicer's three views, 
 §3, §4.1, §5.1, §6, §8, ADR-0003/0004 revised, ADR-0009; 3.2: the video is what Play shows,
 played back and forth and exported in one click, nearest neighbour only in the app, ADR-0011;
 3.3: the app is "choose 3 points (or 4)" — no CSV, no sliders, one picture panel — and an export
-that never fails because of ffmpeg, ADR-0012)
+that never fails because of ffmpeg, ADR-0012; 3.3.1: always cut open, the system's file dialogs, no samples, ADR-0013)
 **Answers:** how is the system structured, and what did we reject?
 **Inputs:** [SRS](SRS.md) · **Details per component:** [ALGORITHM.md](ALGORITHM.md) (EDD of the projection) ·
 **Decisions:** [ADRs](adr/)
@@ -112,7 +112,7 @@ adapters" split from the course modules: `VideoWriter` is a port, the three writ
 | `VideoWriters` | Picks the MP4 writer: ffmpeg only if it lists `libx264` (asked once, 15 s timeout), else the built-in one; the app and `Ex0` retry with the built-in one if ffmpeg fails half-way | An export never fails because of the ffmpeg a PC happens to have ([ADR-0012](adr/0012-points-only-app-one-picture-panel.md)) |
 | `FrameRenderer` | Plane *i* → grey frame *i*, common frame size; null → black | Shared by CLI and GUI, so both produce identical frames |
 | `Ex0` | Argument parsing, exit codes, orchestration | Pipeline reads top-down |
-| `StudioApp` | The app: toolbar (with the projection FPS), the 3-D view, one picture panel (the cut → Axial → Coronal → Sagittal → the cut), points editor (3/4 points, pick or type; *Make isosceles* only while doubtful), the video: Play back and forth, Export; owns the current plane and tells every view | Swing only; nearest-neighbour projection on every change (≈ 0.3–3 ms); model build and export on `SwingWorker`s; no CSV and no sliders ([ADR-0011](adr/0011-the-video-is-what-play-shows.md), [ADR-0012](adr/0012-points-only-app-one-picture-panel.md)) |
+| `StudioApp` | The app: toolbar (Open NRRD… with the system's file dialog, the projection FPS), the 3-D view (always cut open), one picture panel (the cut → Axial → Coronal → Sagittal → the cut), points editor (3/4 points, pick or type; *Make isosceles* only while doubtful), the video: Play back and forth, Export; owns the current plane and tells every view | Swing only; nearest-neighbour projection on every change (≈ 0.3–3 ms); model build and export on `SwingWorker`s; no CSV and no sliders ([ADR-0011](adr/0011-the-video-is-what-play-shows.md), [ADR-0012](adr/0012-points-only-app-one-picture-panel.md)) |
 | `Sweep` | The default video: the current plane moved along its unit normal in whole-voxel steps (≈ 150 frames) across the volume's box, and where the current plane is in it | Pure geometry, no Swing → unit-tested (TC-107, TC-108) |
 | `PlaneSpec` | The *movable* form of a plane: centre, yaw/pitch/roll, width, height, top ratio; `toPlane`, `fromPlane`, `slide`, `withShape`, `makeIsosceles` (and `lerp`, presets for tests and tools) | Every spec is a valid plane by construction: the wheel slides it, "4 points" reshapes it, clicks are made isosceles through it ([ADR-0008](adr/0008-plane-spec-and-software-renderer.md)) |
 | `VolumeGeometry` | Index ⇄ world millimetres from `space directions`; which index axis is Axial/Coronal/Sagittal, their direction on screen, labels; `slicePlane(view, k)` | The display follows the patient's axes; the CSV stays in indices ([ADR-0009](adr/0009-cut-open-solid-and-point-picking.md)) |

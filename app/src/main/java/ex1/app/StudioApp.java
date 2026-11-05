@@ -19,6 +19,7 @@ import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
+import java.awt.FileDialog;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -34,6 +35,7 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
@@ -43,19 +45,14 @@ import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 
 import javax.swing.BorderFactory;
-import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
@@ -67,13 +64,12 @@ import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
-import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * The application (the deliverable of Ex1): open a scan (NRRD), see it as a solid object, choose
- * the plane by its 3 points (or 4 for a trapezoid) - clicked on the views or typed - and see the
- * object cut open along it (the inside shows on the cut face) next to the plane's projection, the
- * image of the assignment. One picture panel flips between that cut and the three standard views
+ * The application (the deliverable of Ex1): open a scan (NRRD) from anywhere on the computer or by
+ * dropping it on the window, see it as a solid object, choose the plane by its 3 points (or 4 for
+ * a trapezoid) - clicked on the views or typed - and see the object cut open along it (always: the
+ * inside shows on the cut face) next to the plane's projection, the image of the assignment. One picture panel flips between that cut and the three standard views
  * of 3D Slicer (axial, coronal, sagittal), on which the points are clicked.
  *
  * The video is the chosen plane moved through the whole scan: Play shows it back and forth,
@@ -150,7 +146,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private final JLabel status = new JLabel(" ");
     private final JProgressBar progress = new JProgressBar();
     private final JLabel fpsLabel = new JLabel(" ");
-    private final JCheckBox cutOpenBox = new JCheckBox("Cut open", true);
 
     // ---- points editor
     private final JRadioButton threePoints = new JRadioButton("3 points (triangle)", true);
@@ -268,7 +263,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             orthos[v].view().setTransferHandler(drop);
         }
         updateEnabled();
-        status.setText("Open a scan: \"Open NRRD...\", \"Samples\", or drop a .nrrd file on the window.");
+        status.setText("Open a scan: \"Open NRRD...\" (anywhere on the computer), or drop a .nrrd file on the window.");
     }
 
     /**
@@ -285,27 +280,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 chooseVolume();
             }
         }));
-        final JButton samples = new JButton("Samples");
-        samples.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                showSamplesMenu(samples);
-            }
-        });
-        top.add(samples);
-        top.add(Box.createHorizontalStrut(16));
-        cutOpenBox.setToolTipText("Remove the half of the object in front of the plane, so its inside shows");
-        cutOpenBox.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                view3d.setCutOpen(cutOpenBox.isSelected());
-            }
-        });
-        top.add(cutOpenBox);
+        JLabel orDrop = new JLabel("or drop a .nrrd file anywhere on the window");
+        orDrop.setForeground(new Color(0x707070));
+        top.add(orDrop);
 
         fpsLabel.setFont(fpsLabel.getFont().deriveFont(Font.BOLD, fpsLabel.getFont().getSize2D() + 1f));
         fpsLabel.setToolTipText("<html>How many cuts (video frames) per second the projection computes for the current plane:<br>"
@@ -606,61 +583,34 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     // ------------------------------------------------------------------ volume
 
-    /** Shows a file chooser for NRRD files. */
+    /**
+     * Asks for a scan with the system's own file dialog (on Windows the Explorer one: Desktop,
+     * Downloads, This PC ...), so a scan can come from anywhere on the computer.
+     */
     private void chooseVolume()
     {
-        JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Open a 3-D scan");
-        chooser.setFileFilter(new FileNameExtensionFilter("NRRD volumes (*.nrrd, *.nhdr)", "nrrd", "nhdr"));
-        if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
+        FileDialog dialog = new FileDialog(frame, "Open a 3-D scan (.nrrd)", FileDialog.LOAD);
+        dialog.setDirectory(openFolder().getAbsolutePath());
+        if (onWindows())
         {
-            openVolume(chooser.getSelectedFile());
+            // The Windows dialog takes a pattern in the file name box as its filter.
+            dialog.setFile("*.nrrd;*.nhdr");
         }
-    }
-
-    /**
-     * @param (Component) anchor the button the menu opens under
-     */
-    private void showSamplesMenu(Component anchor)
-    {
-        JPopupMenu menu = new JPopupMenu();
-        // Only the files that exist are offered: the lecturer's scans come in the app's download,
-        // not in the repository.
-        String[][] samples = {
-            {"MRHead.nrrd", "MRHead (MRI head)"},
-            {"dice.nrrd", "Dice (the die of the lecturer's edge cases)"},
-            {"lecturer/MRHead_1.nrrd", "Lecturer: MRHead_1 (head)"},
-            {"lecturer/onion.nrrd", "Lecturer: onion"},
-            {"lecturer/croissant.nrrd", "Lecturer: croissant"},
-            {"lecturer/swiss_roll.nrrd", "Lecturer: swiss roll"},
-            {"lecturer/biscuit_cake.nrrd", "Lecturer: biscuit cake"},
-            {"phantom_spheres_500.nrrd", "Spheres phantom (500^3, speed test)"},
-        };
-        for (int i = 0; i < samples.length; i++)
+        dialog.setFilenameFilter(new FilenameFilter()
         {
-            final File nrrd = findInProject("data", samples[i][0]);
-            if (nrrd == null)
+            @Override
+            public boolean accept(File dir, String name)
             {
-                continue;
+                String n = name.toLowerCase(Locale.ROOT);
+                return n.endsWith(".nrrd") || n.endsWith(".nhdr");
             }
-            JMenuItem item = new JMenuItem(samples[i][1]);
-            item.addActionListener(new ActionListener()
-            {
-                @Override
-                public void actionPerformed(ActionEvent e)
-                {
-                    openVolume(nrrd);
-                }
-            });
-            menu.add(item);
-        }
-        if (menu.getComponentCount() == 0)
+        });
+        dialog.setVisible(true);
+        if (dialog.getFile() == null)
         {
-            JMenuItem none = new JMenuItem("No sample scans next to the app (folder data)");
-            none.setEnabled(false);
-            menu.add(none);
+            return;
         }
-        menu.show(anchor, 0, anchor.getHeight());
+        openVolume(new File(dialog.getDirectory(), dialog.getFile()));
     }
 
     /**
@@ -1499,34 +1449,34 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * Asks where to save the video. The name proposed is not taken yet, and an existing file
-     * chosen anyway is checked first: on Windows a video open in a player cannot be replaced.
+     * Asks where to save the video, with the system's own file dialog. The name proposed is not
+     * taken yet; a file chosen anyway is checked first: on Windows a video open in a player cannot
+     * be replaced. (The system dialog itself asks before replacing a file.)
      *
      * @param (int) frames number of frames, for the dialog title
      * @return the file, or null when cancelled
      */
     private File chooseVideoFile(int frames)
     {
-        File folder = startFolder();
-        JFileChooser chooser = new JFileChooser(folder);
-        chooser.setDialogTitle("Export the video: " + frames + " frames, " + seconds(frames) + " s at " + VIDEO_FPS + " fps");
-        chooser.setFileFilter(new FileNameExtensionFilter("MP4 video (*.mp4)", "mp4"));
-        chooser.setSelectedFile(freeName(folder, baseName() + "_cut", ".mp4"));
-        if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION)
+        File folder = volumeFile.getAbsoluteFile().getParentFile();
+        FileDialog dialog = new FileDialog(frame, "Export the video: " + frames + " frames, " + seconds(frames) + " s at "
+                + VIDEO_FPS + " fps", FileDialog.SAVE);
+        dialog.setDirectory(folder.getAbsolutePath());
+        dialog.setFile(freeName(folder, baseName() + "_cut", ".mp4").getName());
+        dialog.setVisible(true);
+        if (dialog.getFile() == null)
         {
             return null;
         }
-        File target = withExtension(chooser.getSelectedFile(), ".mp4");
-        if (!target.exists())
-        {
-            return target;
-        }
-        if (JOptionPane.showConfirmDialog(frame, target.getName() + " already exists. Replace it?",
-                "Export video", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION)
+        File chosen = new File(dialog.getDirectory(), dialog.getFile());
+        File target = withExtension(chosen, ".mp4");
+        // The dialog asked about the name typed; ".mp4" added here may name another file that exists.
+        if (!target.equals(chosen) && target.exists() && JOptionPane.showConfirmDialog(frame,
+                target.getName() + " already exists. Replace it?", "Export video", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION)
         {
             return null;
         }
-        if (!canReplace(target))
+        if (target.exists() && !canReplace(target))
         {
             error("Cannot replace " + target.getName(), "The file is open in another program (a video player?).\n"
                     + "Close it there, or save the video under another name.");
@@ -1858,56 +1808,29 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * Looks for a project file near the jar or the working folder.
-     *
-     * @param (String) dir sub-folder (may contain "/")
-     * @param (String) name file name (may contain "/")
-     * @return the file, or null
+     * @return where the open dialog starts: the current scan's folder, else Downloads, else home
      */
-    private static File findInProject(String dir, String name)
-    {
-        List<File> roots = new ArrayList<File>();
-        roots.add(new File(".").getAbsoluteFile());
-        try
-        {
-            File jar = new File(StudioApp.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            File d = jar.getParentFile();
-            while (d != null && roots.size() < 6)
-            {
-                roots.add(d);
-                d = d.getParentFile();
-            }
-        }
-        catch (Exception e)
-        {
-            // Fall back to the working folder only.
-        }
-        for (int i = 0; i < roots.size(); i++)
-        {
-            File f = new File(new File(roots.get(i), dir), name);
-            if (f.isFile())
-            {
-                return f;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * @return folder to start file choosers in: the scan's, else the samples', else home
-     */
-    private File startFolder()
+    private File openFolder()
     {
         if (volumeFile != null)
         {
             return volumeFile.getAbsoluteFile().getParentFile();
         }
-        File sample = findInProject("data", "MRHead.nrrd");
-        if (sample != null)
+        File home = new File(System.getProperty("user.home"));
+        File downloads = new File(home, "Downloads");
+        if (downloads.isDirectory())
         {
-            return sample.getParentFile();
+            return downloads;
         }
-        return new File(System.getProperty("user.home"));
+        return home;
+    }
+
+    /**
+     * @return true on Windows (its file dialog filters by a pattern in the name box)
+     */
+    private static boolean onWindows()
+    {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
     }
 
     /**

@@ -36,7 +36,7 @@ a detailed design is needed"; the design is the point of this repository.
 
 | In scope | Out of scope |
 |----------|--------------|
-| **The app**: open a scan (menu, drag-and-drop, samples); the object as a solid **cut open by the plane**; the cut and the **Axial / Coronal / Sagittal** views in one picture panel; **choose the 3 (or 4) points** — clicked on those views or on the object, or typed; the mouse wheel slides the plane; **Play** the plane moving through the scan and **export it as MP4** | CSV in the app — lists of planes (the lecturer's use cases) are the command line's job; CSV points in millimetres |
+| **The app**: open a scan from anywhere on the computer (the system's file dialog) or by dragging it onto the window; the object as a solid, always **cut open by the plane**; the cut and the **Axial / Coronal / Sagittal** views in one picture panel; **choose the 3 (or 4) points** — clicked on those views or on the object, or typed; the mouse wheel slides the plane; **Play** the plane moving through the scan and **export it as MP4** | CSV in the app — lists of planes (the lecturer's use cases) are the command line's job; CSV points in millimetres |
 | **Use cases** (CSV, the course format): `python Ex0.py scan.nrrd planes.csv out.mp4` — one frame per row, the lecturer's rules for bad rows | Colour / vector / 4-D volumes |
 | The projection algorithm of the sheet (triangle + trapezoid), nearest-neighbour sampling (the sheet's `M[p]`; trilinear as a command-line option), optional multithreading | GPU |
 | The course's CSV format and rules: valid / doubtful (drawn + warned) / bad (black + warned) rows, exactly as the lecturer's `edge_cases.csv` expects | Networking, servers |
@@ -60,10 +60,10 @@ The assignment's command works the same way, with the bundled Java:
 **Linux / macOS:** the bundled runtime is for Windows; with any Java 17+ installed, `./Ex0` or
 `python Ex0.py` with no arguments opens the app, with three arguments runs the demo.
 
-Then open a scan: **Open NRRD…**, drop a `.nrrd` on the window, or **Samples** (MRHead, the die of
-the lecturer's edge cases, and in the app download his scans too). The lecturer's five test scans
-are in his Drive folder (see [data/README.md](data/README.md)); their use cases (CSV) ship in
-`data/course/` for the command line.
+Then open a scan: **Open NRRD…** (the normal Windows file dialog — Desktop, Downloads, any drive)
+or drag a `.nrrd` onto the window or onto `Ex1.exe`. The app download has the lecturer's scans in
+`data\lecturer\`; they are also in his Drive folder (see [data/README.md](data/README.md)); their use
+cases (CSV) ship in `data/course/` for the command line.
 
 ### Choose a cut and look inside — 4 clicks
 
@@ -88,8 +88,8 @@ are in his Drive folder (see [data/README.md](data/README.md)); their use cases 
 
 | Where | What |
 |-------|------|
-| Toolbar | **Open NRRD…**, **Samples**; **Cut open** on/off; on the right, **Projection: N FPS** — how many cuts per second the algorithm computes for the current plane (nearest neighbour, one thread, median of the last 15). The object's surface is found automatically. |
-| **3-D model — cut open by the plane** (left) | The scan as a solid: the half between you and the plane is removed, so the cut face shows the inside (inside the triangle at full brightness, the rest of the plane darker); the outside is shaded. Box, plane outline and points on top. Drag = orbit, wheel = move the plane through the object, Ctrl+wheel = zoom, double-click = reset; while picking, a click places the point on the surface or on the cut face. |
+| Toolbar | **Open NRRD…** (the system's file dialog, anywhere on the computer) — or drop a `.nrrd` anywhere on the window; on the right, **Projection: N FPS** — how many cuts per second the algorithm computes for the current plane (nearest neighbour, one thread, median of the last 15). The object's surface is found automatically. |
+| **3-D model — cut open by the plane** (left) | The scan as a solid, always cut open: the half between you and the plane is removed, so the cut face shows the inside (inside the triangle at full brightness, the rest of the plane darker); the outside is shaded. Box, plane outline and points on top. Drag = orbit, wheel = move the plane through the object, Ctrl+wheel = zoom, double-click = reset; while picking, a click places the point on the surface or on the cut face. |
 | **The picture panel** (middle) | One picture at a time, `◀ ▶` to flip, after the last back to the first: **1 The cut** — the projection of the plane, exactly one frame of the video ([ALGORITHM.md](docs/ALGORITHM.md)), `a`/`a1 a2`, `b`, `c` at its corners, its size below (and "frame i of n" while playing); **2 Axial, 3 Coronal, 4 Sagittal** — Slicer's views with A/P, R/L, S/I labels and a slider for the slice; the orange line is where the plane crosses it, the dots are its points. Click a view to place a point while picking. |
 | **1. The plane — choose 3 points (or 4)** | 3 points (triangle) or 4 (trapezoid); type them (Enter applies), **pick** one, or **Pick a, b, c** (all). Only problems are written below: a plane that is not isosceles is drawn as given and gets a **Make isosceles** button; a bad plane is a black frame, with the reason. |
 | **2. The video** | One line saying what the video is and how long; **Play** / **Stop** and **Export video…**. |
