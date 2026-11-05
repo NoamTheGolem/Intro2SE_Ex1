@@ -170,31 +170,31 @@ free quality upgrade when there is FPS headroom.
 between the viewer and the plane is removed, so the cut face shows the inside of the object —
 the brain inside the skull, the onion's rings, the swiss roll's spiral, the croissant's layers —
 next to the shaded outside. Rows: head, onion, swiss roll, croissant; columns: the default
-triangle `a, b, c`, then the **Axial**, **Coronal** and **Sagittal** presets (each puts the plane on
-that view's current slice and turns the camera to face it):
+triangle `a, b, c`, then the plane of the **Axial**, **Coronal** and **Sagittal** slice (v3.1 had
+buttons for these; since v3.3 the plane comes from its points only, ADR-0012):
 
 ![The lecturer's scans cut open](img/cut_open_gallery.png)
 
-The whole window (v3.2, ADR-0011) — the head with the Axial preset: 3-D view (top left), the cut
-= the video frame (top right), Axial/Coronal/Sagittal with the plane's line and points (bottom),
-and one column of three short panels: the points, the standard planes (sliders folded away), the
-video with the button that loads `head.csv`; the projection speed top right:
+The whole window (v3.3, ADR-0012) — the head after three picked points, the picture panel turned to
+**Axial** (picture 2 of 4): the 3-D view (left), the axial slice with the plane's line (middle; its
+arrows flip to Coronal, Sagittal and back to the cut), the points and the video (right), the
+projection speed top right:
 
-![The app with MRHead_1 and the Axial preset](img/app_head_axial.png)
+![The app with MRHead_1, the picture panel on Axial](img/app_head_axial.png)
 
 **Choosing a cut by 3 points** (Robot script on a virtual display, the steps of TESTING B.11):
-*Pick a, b, c* → `a` clicked on the top of the head, `b` at the front of the jaw and `c` at the
-back of the neck, all in the Sagittal view → the app says "Clicks are never exact, so c was moved
-a little along the line a-c to make the triangle isosceles", cuts the head there and turns the
-camera to the cut: the brain and the brain stem show on the cut face; the 163×189 cut is
-projected at about 2100 FPS (toolbar):
+*Pick a, b, c* (the picture panel turns to Axial; two arrows on to Sagittal) → `a` clicked on the
+top of the head, `b` at the jaw and `c` at the back of the neck → the app says "Clicks are never
+exact, so c was moved a little along the line a-c to make the triangle isosceles", cuts the head
+there and turns the camera to the cut: the brain and the brain stem show on the cut face, and on
+the cut (picture 1) as the video frame, projected at about 1800 FPS (toolbar):
 
 ![Three picked points cut the head open](img/app_head_picked.png)
 
-The swiss roll with the Sagittal preset — the cut face is the roll seen lengthwise; in the slice
-views the four corners share labels where they coincide ("a1, b", "a2, c"):
+The swiss roll with the picture panel on **Sagittal** (picture 4 of 4) — the roll seen lengthwise,
+with the default triangle's line; the 3-D view shows the spiral on the cut face:
 
-![The swiss roll, sagittal](img/app_swissroll_sagittal.png)
+![The swiss roll, the picture panel on Sagittal](img/app_swissroll_sagittal.png)
 
 **Timings** (the 2-vCPU VM; `ModelTiming` harness, renders after warm-up, 520×340 view):
 
@@ -211,23 +211,26 @@ So the 3-D view redraws at 140–250 FPS at half resolution while the user drags
 margin). The first frame after loading is slower (75–150 ms, shown by v3.1's 3-D view, which printed its
 frame time) because the JIT has not compiled the ray loop yet. The 2-D cut costs 1–10 ms as before.
 
-**The lecturer's use cases in the app.** Opening `MRHead_1.nrrd` enables *Load its use case:
-head.csv* (found in `data/course/`); one click loads the 280 planes without a warning, *Play*
-runs through them on the cut-open head, back and forth, and *Export video…* writes the MP4.
-`Ex0 MRHead_1.nrrd head.csv x.mp4` reproduces it byte for byte. An earlier export differed from
-the lecturer's rows in one frame because the writer rounded to 6 decimals; the writer now prints
-exact numbers (ADR-0008, TC-48).
+**The lecturer's use cases** go through the command line since v3.3 (ADR-0012): `Ex0 MRHead_1.nrrd
+head.csv x.mp4` gives his 280 frames (v3.2 also loaded them in the app and its export matched
+`Ex0` byte for byte; an earlier export differed in one frame because the writer rounded to 6
+decimals — the writer now prints exact numbers, ADR-0008, TC-48).
 
-**The video without a use case (v3.2).** With no list the video is the current plane swept
-through the scan (ADR-0011). On MRHead the default triangle gives 169 frames, 17 s at 10 fps;
-*Play* starts at the current plane and turns at both ends ("frame 99 of 169" under the cut);
-*Export video…* → Enter wrote `MRHead_sweep.mp4` (206×230, 10 fps, 169 frames by `ffprobe`) and
-`MRHead_sweep.csv`, and `Ex0 MRHead.nrrd MRHead_sweep.csv x.mp4` wrote a file with the **same
-MD5**; the die with `edge_cases.csv` likewise (16 frames, rows 6 and 9–16 black, same MD5). The
-same export under Wine with the bundled Windows runtime (no ffmpeg there, so the built-in
-writer): 169 frames, 12.7 MB.
+**The app's video** is the chosen plane swept through the scan (ADR-0011). On MRHead the default
+triangle gives 169 frames, 17 s at 10 fps; *Play* starts at the current plane and turns at both
+ends ("frame 63 of 128" under the cut for the picked triangle below); *Export video…* → Enter
+wrote `MRHead_cut.mp4` (10 fps, one frame per step by `ffprobe`; a 4-point trapezoid in the axial
+slice: 127 frames, 80×152), and a second export proposed `MRHead_cut_2.mp4`.
 
-![Playing the sweep: frame 99 of 169](img/app_playing.png)
+**Export on a PC with a broken ffmpeg** (ADR-0012). Under Wine with the bundled Windows runtime
+and a fake `ffmpeg.exe` on the PATH that lists `libx264` but fails ("Unknown encoder
+'libx264'") — the kind of copy that made v3.2's export fail: the CLI printed "Warning : ffmpeg
+stopped accepting frames: Unknown encoder 'libx264' - writing the video with the built-in
+encoder instead" and wrote the edge-case video (16 frames); the app saved 169 frames and said
+"The ffmpeg on this computer did not work, so the app's own encoder made the video". Without any
+ffmpeg the built-in writer is used from the start (169 frames, 12.7 MB).
+
+![Playing the sweep of the picked triangle: frame 63 of 128](img/app_playing.png)
 
 ## 9. Other observations
 

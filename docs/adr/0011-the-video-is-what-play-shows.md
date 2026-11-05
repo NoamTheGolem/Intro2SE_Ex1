@@ -1,6 +1,8 @@
 # ADR-0011: The video is what Play shows — exported in one click; the app samples nearest neighbour only
 
-**Status:** Accepted · **Date:** 2026-11-05
+**Status:** Accepted · **Date:** 2026-11-05 · the same day [ADR-0012](0012-points-only-app-one-picture-panel.md)
+took CSV out of the app: the video is now always the sweep (decisions 1 and 3 below keep only that
+case), and the sliders and presets of decision 7 are gone
 
 ## Context
 The team tried v3.1.1 of the app and said, in their words: *"there is too much in the screen now

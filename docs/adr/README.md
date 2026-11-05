@@ -16,4 +16,5 @@ number; superseded ones are kept and marked.
 | [0008](0008-plane-spec-and-software-renderer.md) | Edit planes as centre + angles + size; draw the 3-D view with a software renderer; write exact numbers | Accepted; part 2 superseded by 0009 |
 | [0009](0009-cut-open-solid-and-point-picking.md) | Show the scan as a solid cut open by the plane; choose the plane by picking 3 points on the three standard views | Accepted |
 | [0010](0010-ship-the-java-runtime.md) | Ship the app with its own Java runtime and a native launcher: download and run | Accepted |
-| [0011](0011-the-video-is-what-play-shows.md) | The video is what Play shows (the list, or the current plane swept through the scan), played back and forth, exported in one click at 10 fps; the app samples nearest neighbour only and shows the projection FPS | Accepted |
+| [0011](0011-the-video-is-what-play-shows.md) | The video is what Play shows (the list, or the current plane swept through the scan), played back and forth, exported in one click at 10 fps; the app samples nearest neighbour only and shows the projection FPS | Accepted; the list / CSV parts superseded by 0012 |
+| [0012](0012-points-only-app-one-picture-panel.md) | The app is "choose 3 points (or 4)": no CSV, no sliders, one picture panel (cut → Axial → Coronal → Sagittal → cut); Export never fails because of ffmpeg | Accepted |
