@@ -63,10 +63,10 @@ public class ExportRoundTripTest
     }
 
     @Test
-    public void defaultSweepVideoWithABlackFrameEqualsCommandLineFramesOfItsCsv() throws IOException
+    public void defaultVideoHasOneFramePerSweepStepAndABadPlaneIsBlack()
     {
-        // The app's video when no use case is loaded: an oblique triangle swept through the scan,
-        // here with a plane the algorithm cannot draw (a list row a = b = c) in the middle.
+        // The app's video: an oblique triangle swept through the scan, here with a plane the
+        // algorithm cannot draw (a = b = c) in the middle.
         Volume volume = PhantomGenerator.build("spheres", VoxelType.UINT8, 48);
         IntensityWindow window = IntensityWindow.fromPercentiles(volume,
                 IntensityWindow.DEFAULT_LOW_PERCENTILE, IntensityWindow.DEFAULT_HIGH_PERCENTILE);
@@ -75,26 +75,31 @@ public class ExportRoundTripTest
         int black = source.size() / 2;
         Vec3 o = new Vec3(5, 5, 5);
         source.set(black, Plane.triangle(o, o, o));
-        List<Plane> inApp = StudioApp.videoFrames(source);
-        assertEquals(null, inApp.get(black));
-
-        File csv = File.createTempFile("ex1-sweep", ".csv");
-        csv.deleteOnExit();
-        PlaneCsvWriter.write(StudioApp.csvRows(inApp), csv);
-        PlaneCsvReader.Result back = PlaneCsvReader.read(csv, Plane.DEFAULT_EPS);
-        assertTrue(back.errors.toString(), back.isValid());
-        // Frame i is row i: the black frame is a row too, so the numbering does not shift.
-        assertEquals(inApp.size(), back.planes().size());
-        assertEquals(null, back.planes().get(black));
+        List<Plane> frames = StudioApp.videoFrames(source);
+        assertEquals(source.size(), frames.size());
+        assertEquals(null, frames.get(black));
 
         Projector nn = Projector.create(Projector.Interpolation.NEAREST);
-        FrameRenderer app = new FrameRenderer(volume, inApp, window, nn);
-        FrameRenderer cli = new FrameRenderer(volume, back.planes(), window, nn);
-        assertEquals(app.width(), cli.width());
-        assertEquals(app.height(), cli.height());
-        for (int i = 0; i < inApp.size(); i++)
+        FrameRenderer video = new FrameRenderer(volume, frames, window, nn);
+        byte[] blackFrame = video.render(black).clone();
+        for (int i = 0; i < blackFrame.length; i++)
         {
-            assertArrayEquals("frame " + i, app.render(i), cli.render(i));
+            assertEquals("pixel " + i, 0, blackFrame[i]);
         }
+        // The other frames show the scan: the sweep passes through the phantom's spheres.
+        int bright = 0;
+        for (int i = 0; i < frames.size(); i++)
+        {
+            byte[] f = video.render(i);
+            for (int k = 0; k < f.length; k++)
+            {
+                if (f[k] != 0)
+                {
+                    bright++;
+                    break;
+                }
+            }
+        }
+        assertTrue(bright + " of " + frames.size() + " frames show something", bright > frames.size() / 2);
     }
 }

@@ -8,12 +8,12 @@ import ex1.core.Projector;
 import ex1.core.Vec3;
 import ex1.core.Volume;
 import ex1.io.NrrdReader;
-import ex1.io.PlaneCsvReader;
 import ex1.io.PlaneCsvWriter;
 import ex1.io.VideoWriter;
 import ex1.io.VideoWriters;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -21,15 +21,21 @@ import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -40,13 +46,12 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
-import javax.swing.DefaultListModel;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -54,34 +59,27 @@ import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
-import javax.swing.JSlider;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
  * The application (the deliverable of Ex1): open a scan (NRRD), see it as a solid object, choose
- * a plane by 3 points (or 4 for a trapezoid) - typed, or clicked on the views - and see the object
- * cut open along it (the inside shows on the cut face) and the plane's projection, the image of
- * the assignment. The three standard views of 3D Slicer (axial, coronal, sagittal) show where the
- * plane crosses the scan.
+ * the plane by its 3 points (or 4 for a trapezoid) - clicked on the views or typed - and see the
+ * object cut open along it (the inside shows on the cut face) next to the plane's projection, the
+ * image of the assignment. One picture panel flips between that cut and the three standard views
+ * of 3D Slicer (axial, coronal, sagittal), on which the points are clicked.
  *
- * The video is what "Play" shows: the planes of a use case (the lecturer's CSV, or planes added by
- * hand), or - when there is none - the current plane swept through the whole scan. Play runs it
- * back and forth; "Export video" saves one pass of it (first to last) as an MP4, with its CSV next
- * to it. The command-line demo (Ex0) is the batch form of the same pipeline and reproduces an
- * export byte for byte. Sampling is nearest-neighbour, the course's M[p] (ADR-0011).
+ * The video is the chosen plane moved through the whole scan: Play shows it back and forth,
+ * Export video saves one pass of it as an MP4. Lists of planes in CSV files (the lecturer's use
+ * cases) are the command line's job: python Ex0.py scan.nrrd planes.csv out.mp4 (ADR-0012).
+ * Sampling is nearest-neighbour, the course's M[p] (ADR-0011).
  */
 public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 {
@@ -89,77 +87,28 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private static final int CORES = Runtime.getRuntime().availableProcessors();
     /** Play and export use one rate, the Ex0 default, so Play shows the video at its real speed. */
     static final int VIDEO_FPS = 10;
-    private static final int MAX_LIST_LINES_IN_DIALOG = 16;
-    private static final int SLIDER_SCALE = 10;
     private static final double NANOS_PER_MS = 1e6;
     private static final String[] TRIANGLE_NAMES = {"a", "b", "c"};
     private static final String[] TRAPEZOID_NAMES = {"a1", "a2", "b", "c"};
-    private static final int CONTROL_WIDTH = 400;
+    private static final int CONTROL_WIDTH = 380;
     /** Wrap width of HTML labels in CSS px: Swing draws one CSS px as 1.3 screen pixels. */
     private static final int HTML_WIDTH = (CONTROL_WIDTH - 80) * 10 / 13;
     private static final int INFO_HEIGHT = 44;
+    private static final String HINT_COLOUR = "#707070";
     /** The FPS shown is the median of this many recent projections: one slow frame (GC) is ignored. */
     private static final int FPS_SAMPLES = 15;
     /** The FPS label changes at most this often, so it can be read while playing. */
     private static final int FPS_LABEL_MS = 400;
     /** Projections run once before timing starts, so the first number is not the JIT warming up. */
     private static final int WARM_UP_PROJECTIONS = 5;
-    /** Stands for a black frame (a bad CSV row) in a written CSV: a=b=c, so Ex0 draws it black too. */
-    private static final Plane BLACK_ROW = Plane.triangle(new Vec3(0, 0, 0), new Vec3(0, 0, 0), new Vec3(0, 0, 0));
-
-    /** One entry of the use-case list: a plane (null = black frame) and where it came from. */
-    static final class Keyframe
-    {
-        final Plane plane;
-        final String origin;
-        final String note;
-
-        /**
-         * @param (Plane) plane plane or null
-         * @param (String) origin e.g. "row 3" or "added"
-         * @param (String) note first warning of the row, or null
-         */
-        Keyframe(Plane plane, String origin, String note)
-        {
-            this.plane = plane;
-            this.origin = origin;
-            this.note = note;
-        }
-
-        @Override
-        public String toString()
-        {
-            if (plane == null)
-            {
-                String why = "not a plane";
-                if (note != null)
-                {
-                    why = note.replace(" -> black frame", "");
-                }
-                return origin + ": black frame - " + why;
-            }
-            // Short: the points show in the editor when the row is selected.
-            String shape = "trapezoid";
-            if (plane.isTriangle())
-            {
-                shape = "triangle";
-            }
-            else if (Math.abs(plane.a1().dist(plane.a2()) - plane.b().dist(plane.c())) < Plane.DEFAULT_EPS)
-            {
-                shape = "rectangle";
-            }
-            String text = origin + ": " + shape + " " + plane.imageWidth() + " x " + plane.imageHeight();
-            if (plane.whyNotRenderable() != null)
-            {
-                text += " - black frame";
-            }
-            else if (note != null)
-            {
-                text += "  (!) doubtful, drawn as given";
-            }
-            return text;
-        }
-    }
+    /** Pictures of the picture panel: the cut, then the slice views 0..2 as pictures 1..3. */
+    private static final int PICTURE_CUT = 0;
+    private static final int PICTURES = 4;
+    private static final Color CUT_BAR = new Color(0x2A2E36);
+    private static final int DEFAULT_WIDTH = 1500;
+    private static final int DEFAULT_HEIGHT = 900;
+    private static final int MAX_NAME_TRIES = 999;
+    private static final int MAX_NOTE_CHARS = 90;
 
     // ---- model
     private File volumeFile;
@@ -170,16 +119,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private final Projector projector = Projector.create(Projector.Interpolation.NEAREST);
     private PlaneSpec spec;
     private Plane plane;
-    private File matchingCsv;
-    /** The CSV the list was loaded from, while the list is still exactly that file; else null. */
-    private File listCsv;
-    private final DefaultListModel<Keyframe> keyframes = new DefaultListModel<Keyframe>();
     private List<Plane> playSequence;
     private int playIndex;
     private int playStep = 1;
-    private boolean playingList;
     private boolean busy;
-    private boolean updatingSliders;
     private int modelGeneration;
     private final double[] recentMs = new double[FPS_SAMPLES];
     private int recentCount;
@@ -190,18 +133,24 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private Vec3[] picked;
     private int pickIndex = -1;
     private int pickOnly = -1;
+    /** Picking switched the picture panel from the cut to a slice view; it switches back after. */
+    private boolean pickMovedPicture;
 
     // ---- views
     private final JFrame frame = new JFrame(TITLE);
     private final VolumeView3D view3d = new VolumeView3D(this, CORES);
     private final SliceView cutView = new SliceView();
     private final OrthoView.Panel[] orthos = new OrthoView.Panel[3];
+    private final CardLayout pictures = new CardLayout();
+    private final JPanel pictureCards = new JPanel(pictures);
+    private final JPanel pictureBar = new JPanel(new BorderLayout(6, 0));
+    private final JLabel pictureTitle = new JLabel(" ", JLabel.CENTER);
+    private final JLabel pictureCount = new JLabel(" ");
+    private int picture = PICTURE_CUT;
     private final JLabel status = new JLabel(" ");
     private final JProgressBar progress = new JProgressBar();
     private final JLabel fpsLabel = new JLabel(" ");
     private final JCheckBox cutOpenBox = new JCheckBox("Cut open", true);
-    private final JSlider surface = new JSlider(1, 254, 40);
-    private final JLabel surfaceValue = new JLabel("40");
 
     // ---- points editor
     private final JRadioButton threePoints = new JRadioButton("3 points (triangle)", true);
@@ -213,28 +162,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private final JButton pickAll = new JButton("Pick on the views");
     private final JButton fixButton = new JButton("Make isosceles");
 
-    // ---- move / turn
-    private final JSlider sx = slider(0, 100, 50);
-    private final JSlider sy = slider(0, 100, 50);
-    private final JSlider sz = slider(0, 100, 50);
-    private final JSlider sYaw = slider(-180, 180, 0);
-    private final JSlider sPitch = slider(-90, 90, 0);
-    private final JSlider sRoll = slider(-180, 180, 0);
-    private final JSlider sWidth = slider(2, 100, 50);
-    private final JSlider sHeight = slider(2, 100, 50);
-    private final JSlider sTop = slider(0, 100, 100);
-    private final JLabel[] sliderValues = new JLabel[9];
-    private final JPanel sliderPanel = new JPanel(new GridBagLayout());
-    private final JButton fineTune = new JButton();
-
     // ---- the video
-    private final JList<Keyframe> list = new JList<Keyframe>(keyframes);
-    private final JScrollPane listScroll = new JScrollPane(list);
-    private final JPanel listButtons = new JPanel(new GridLayout(1, 2, 3, 0));
     private final JLabel videoInfo = new JLabel(" ");
     private final JButton playButton = new JButton("Play");
     private final JButton exportButton = new JButton("Export video...");
-    private final JButton matchingButton = new JButton("Load its use case");
     private final Timer playTimer;
 
     // ===================================================================== ENTRY
@@ -243,9 +174,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      * Opens the window on the Swing thread.
      *
      * @param (File) initialVolume NRRD to open at start, or null
-     * @param (File) initialCsv CSV of planes to load after the volume, or null
      */
-    public static void launch(final File initialVolume, final File initialCsv)
+    public static void launch(final File initialVolume)
     {
         SwingUtilities.invokeLater(new Runnable()
         {
@@ -264,7 +194,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 app.frame.setVisible(true);
                 if (initialVolume != null)
                 {
-                    app.openVolume(initialVolume, initialCsv);
+                    app.openVolume(initialVolume);
                 }
             }
         });
@@ -286,36 +216,29 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     // ============================================================ BUILD PIPELINE
 
-    /** Lays out the toolbar, the five views and the control column. */
+    /** Lays out the toolbar, the 3-D view, the picture panel and the control column. */
     private void buildWindow()
     {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setMinimumSize(new Dimension(1100, 700));
-        frame.setSize(new Dimension(1500, 920));
+        frame.setMinimumSize(new Dimension(960, 600));
+        // Never larger than the screen (a laptop at 150 % scaling has room for about 1280 x 680).
+        Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        frame.setSize(new Dimension(Math.min(DEFAULT_WIDTH, screen.width), Math.min(DEFAULT_HEIGHT, screen.height)));
         frame.setLocationRelativeTo(null);
 
         for (int v = 0; v < 3; v++)
         {
-            orthos[v] = new OrthoView.Panel(v, this);
+            orthos[v] = new OrthoView.Panel(v, this, false);
         }
-        JSplitPane topRow = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, titled(view3d, "3-D model - cut open by the plane"),
-                titled(cutView, "The cut - projection of the plane (one video frame)"));
-        topRow.setResizeWeight(0.58);
-        topRow.setBorder(null);
-        JPanel slices = new JPanel(new GridLayout(1, 3, 3, 0));
-        for (int v = 0; v < 3; v++)
-        {
-            slices.add(orthos[v]);
-        }
-        JSplitPane views = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topRow, slices);
-        views.setResizeWeight(0.62);
+        JSplitPane views = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, titled(view3d, "3-D model - cut open by the plane"),
+                buildPicturePanel());
+        views.setResizeWeight(0.5);
         views.setBorder(null);
 
         JPanel controls = new ColumnPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
         controls.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         controls.add(buildPointsPanel());
-        controls.add(buildMovePanel());
         controls.add(buildVideoPanel());
         JScrollPane controlScroll = new JScrollPane(controls, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -383,24 +306,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             }
         });
         top.add(cutOpenBox);
-        top.add(new JLabel("Surface:"));
-        surface.setPreferredSize(new Dimension(130, 24));
-        surface.setToolTipText("Grey level where the object's surface is (Otsu's threshold by default)");
-        surface.setEnabled(false);
-        surface.addChangeListener(new ChangeListener()
-        {
-            @Override
-            public void stateChanged(ChangeEvent e)
-            {
-                surfaceValue.setText(Integer.toString(surface.getValue()));
-                if (!surface.getValueIsAdjusting())
-                {
-                    changeSurface(surface.getValue());
-                }
-            }
-        });
-        top.add(surface);
-        top.add(surfaceValue);
 
         fpsLabel.setFont(fpsLabel.getFont().deriveFont(Font.BOLD, fpsLabel.getFont().getSize2D() + 1f));
         fpsLabel.setToolTipText("<html>How many cuts (video frames) per second the projection computes for the current plane:<br>"
@@ -414,12 +319,61 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
+     * The picture panel: one picture at a time - the cut (the triangle), then Axial, Coronal and
+     * Sagittal - and arrows to flip through them; after the last one it comes back to the cut.
+     *
+     * @return the panel
+     */
+    private JPanel buildPicturePanel()
+    {
+        pictureCards.add(cutView, Integer.toString(PICTURE_CUT));
+        for (int v = 0; v < 3; v++)
+        {
+            pictureCards.add(orthos[v], Integer.toString(v + 1));
+        }
+        JButton previous = arrowButton(false, "Previous picture");
+        previous.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                flipPicture(-1);
+            }
+        });
+        JButton next = arrowButton(true, "Next picture");
+        next.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                flipPicture(1);
+            }
+        });
+        pictureTitle.setForeground(Color.WHITE);
+        pictureTitle.setFont(pictureTitle.getFont().deriveFont(Font.BOLD));
+        pictureCount.setForeground(new Color(0xE6E6E6));
+        JPanel middle = new JPanel(new BorderLayout());
+        middle.setOpaque(false);
+        middle.add(pictureTitle, BorderLayout.CENTER);
+        middle.add(pictureCount, BorderLayout.EAST);
+        pictureBar.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
+        pictureBar.add(previous, BorderLayout.WEST);
+        pictureBar.add(middle, BorderLayout.CENTER);
+        pictureBar.add(next, BorderLayout.EAST);
+        JPanel p = new JPanel(new BorderLayout());
+        p.add(pictureBar, BorderLayout.NORTH);
+        p.add(pictureCards, BorderLayout.CENTER);
+        showPicture(PICTURE_CUT);
+        return p;
+    }
+
+    /**
      * @return the "plane by points" editor
      */
     private JPanel buildPointsPanel()
     {
         JPanel p = new JPanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder("1. The plane - its points (voxel x, y, z)"));
+        p.setBorder(BorderFactory.createTitledBorder("1. The plane - choose 3 points (or 4)"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(1, 3, 1, 3);
         g.anchor = GridBagConstraints.WEST;
@@ -431,19 +385,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             @Override
             public void actionPerformed(ActionEvent e)
             {
-                stopPlay();
-                showPointRows();
-                stopPicking();
-                if (plane != null && plane.isTriangle() == fourPoints.isSelected())
-                {
-                    // Switch the current plane to the other shape, keeping its place and size.
-                    double top = 0.0;
-                    if (fourPoints.isSelected())
-                    {
-                        top = 0.5;
-                    }
-                    applySpec(spec.withShape(spec.width, top, spec.height));
-                }
+                changeShape(fourPoints.isSelected());
             }
         };
         threePoints.addActionListener(onShape);
@@ -542,7 +484,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         g.fill = GridBagConstraints.HORIZONTAL;
         p.add(buttons, g);
         g.gridy = 7;
-        g.fill = GridBagConstraints.HORIZONTAL;
         pointsInfo.setFont(pointsInfo.getFont().deriveFont(Font.PLAIN, 11f));
         // Fixed size: a long message must wrap, not widen the panel (which would squeeze the fields).
         pointsInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
@@ -554,205 +495,23 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the standard planes (the three views of Slicer) and, folded away, the sliders
-     */
-    private JPanel buildMovePanel()
-    {
-        JPanel p = new JPanel(new BorderLayout(0, 3));
-        p.setBorder(BorderFactory.createTitledBorder("2. Or start from a standard plane"));
-        JPanel presets = new JPanel(new GridLayout(1, 3, 3, 0));
-        presets.add(presetButton("Axial", 0));
-        presets.add(presetButton("Coronal", 1));
-        presets.add(presetButton("Sagittal", 2));
-        p.add(presets, BorderLayout.NORTH);
-
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(0, 3, 0, 3);
-        g.anchor = GridBagConstraints.WEST;
-        String[] names = {"Centre x", "Centre y", "Centre z", "Yaw", "Pitch", "Roll", "Width", "Height", "Top / base"};
-        JSlider[] sliders = {sx, sy, sz, sYaw, sPitch, sRoll, sWidth, sHeight, sTop};
-        ChangeListener onSlide = new ChangeListener()
-        {
-            @Override
-            public void stateChanged(ChangeEvent e)
-            {
-                if (!updatingSliders)
-                {
-                    stopPlay();
-                    specFromSliders();
-                }
-            }
-        };
-        for (int i = 0; i < sliders.length; i++)
-        {
-            g.gridy = i;
-            g.gridx = 0;
-            g.weightx = 0;
-            g.fill = GridBagConstraints.NONE;
-            sliderPanel.add(new JLabel(names[i]), g);
-            g.gridx = 1;
-            g.weightx = 1;
-            g.fill = GridBagConstraints.HORIZONTAL;
-            sliders[i].setPreferredSize(new Dimension(150, 20));
-            sliders[i].addChangeListener(onSlide);
-            sliderPanel.add(sliders[i], g);
-            g.gridx = 2;
-            g.weightx = 0;
-            g.fill = GridBagConstraints.NONE;
-            sliderValues[i] = new JLabel("0");
-            sliderValues[i].setPreferredSize(new Dimension(44, 16));
-            sliderPanel.add(sliderValues[i], g);
-        }
-        // Folded by default: the points and the mouse wheel (moves the plane) are enough for most cuts.
-        sliderPanel.setVisible(false);
-        fineTune.setText(fineTuneText(false));
-        fineTune.setHorizontalAlignment(JButton.LEFT);
-        fineTune.setBorderPainted(false);
-        fineTune.setContentAreaFilled(false);
-        fineTune.setFocusPainted(false);
-        fineTune.setMargin(new Insets(1, 2, 1, 2));
-        fineTune.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        fineTune.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                boolean open = !sliderPanel.isVisible();
-                sliderPanel.setVisible(open);
-                fineTune.setText(fineTuneText(open));
-                sliderPanel.getParent().revalidate();
-            }
-        });
-        JPanel more = new JPanel(new BorderLayout());
-        more.add(fineTune, BorderLayout.NORTH);
-        more.add(sliderPanel, BorderLayout.CENTER);
-        p.add(more, BorderLayout.CENTER);
-        return p;
-    }
-
-    /**
-     * @param (boolean) open whether the sliders show
-     * @return the label of the button that folds them
-     */
-    private static String fineTuneText(boolean open)
-    {
-        // Plain text: arrow glyphs are missing from some Windows UI fonts and would show as boxes.
-        if (open)
-        {
-            return "<html><u>Hide the sliders</u></html>";
-        }
-        return "<html><u>Fine-tune with sliders</u> (move, turn, size)</html>";
-    }
-
-    /**
-     * The video: Play shows it, Export saves it. It is the list of planes when there is one (a use
-     * case: the lecturer's CSV or planes added by hand), otherwise the current plane swept through
-     * the scan, so there is always a video and nothing has to be collected by hand first.
+     * The video: Play shows it, Export saves it. It is the chosen plane moved through the whole
+     * scan, so it is ready as soon as a scan is open - nothing is collected by hand.
      *
      * @return the video panel
      */
     private JPanel buildVideoPanel()
     {
-        JPanel p = new JPanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder("3. The video"));
-        GridBagConstraints g = new GridBagConstraints();
-        g.gridx = 0;
-        g.weightx = 1;
-        g.fill = GridBagConstraints.HORIZONTAL;
-        g.insets = new Insets(2, 3, 2, 3);
-
-        matchingButton.setVisible(false);
-        matchingButton.setToolTipText("The lecturer's CSV for this scan, when it is next to it (csv/<name>.csv) or in data/course");
-        matchingButton.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                if (matchingCsv != null)
-                {
-                    loadCsv(matchingCsv);
-                }
-            }
-        });
-        g.gridy = 0;
-        p.add(matchingButton, g);
-
-        JPanel load = new JPanel(new GridLayout(1, 2, 3, 0));
-        load.add(small(button("Load use case (CSV)...", new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                chooseCsv();
-            }
-        })));
-        load.add(small(button("Add current plane", new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                addCurrentPlane();
-            }
-        })));
-        g.gridy = 1;
-        p.add(load, g);
-
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setVisibleRowCount(6);
-        list.addListSelectionListener(new ListSelectionListener()
-        {
-            @Override
-            public void valueChanged(ListSelectionEvent e)
-            {
-                // While playing, the list only follows the video.
-                if (!e.getValueIsAdjusting() && !playTimer.isRunning())
-                {
-                    showSelectedKeyframe();
-                }
-            }
-        });
-        listScroll.setPreferredSize(new Dimension(CONTROL_WIDTH - 40, 110));
-        listScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        g.gridy = 2;
-        p.add(listScroll, g);
-
-        listButtons.add(small(button("Remove", new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                int i = list.getSelectedIndex();
-                if (i >= 0)
-                {
-                    stopPlay();
-                    keyframes.remove(i);
-                    listCsv = null;
-                    updateEnabled();
-                }
-            }
-        })));
-        listButtons.add(small(button("Clear (back to the sweep)", new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                stopPlay();
-                keyframes.clear();
-                listCsv = null;
-                updateEnabled();
-            }
-        })));
-        g.gridy = 3;
-        p.add(listButtons, g);
-
+        JPanel p = new JPanel(new BorderLayout(0, 4));
+        p.setBorder(BorderFactory.createTitledBorder("2. The video"));
         videoInfo.setFont(videoInfo.getFont().deriveFont(Font.PLAIN, 11f));
         videoInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
         videoInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
         videoInfo.setVerticalAlignment(JLabel.TOP);
-        g.gridy = 4;
-        p.add(videoInfo, g);
+        p.add(videoInfo, BorderLayout.NORTH);
 
         JPanel run = new JPanel(new GridLayout(1, 2, 6, 0));
+        run.setBorder(BorderFactory.createEmptyBorder(0, 3, 3, 3));
         playButton.setToolTipText("Plays the video in the views, back and forth, at " + VIDEO_FPS + " frames per second");
         playButton.addActionListener(new ActionListener()
         {
@@ -762,7 +521,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 togglePlay();
             }
         });
-        exportButton.setToolTipText("Saves the video (one pass, first frame to last) as an MP4, with its planes as a CSV next to it");
+        exportButton.setToolTipText("Saves the video (one pass, first frame to last) as an MP4 file");
         exportButton.setFont(exportButton.getFont().deriveFont(Font.BOLD));
         exportButton.addActionListener(new ActionListener()
         {
@@ -774,10 +533,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         });
         run.add(playButton);
         run.add(exportButton);
-        g.gridy = 5;
-        g.insets = new Insets(4, 3, 3, 3);
-        g.ipady = 6;
-        p.add(run, g);
+        run.setPreferredSize(new Dimension(CONTROL_WIDTH - 40, 34));
+        p.add(run, BorderLayout.CENTER);
         return p;
     }
 
@@ -791,12 +548,60 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         JPanel p = new JPanel(new BorderLayout());
         JLabel l = new JLabel(" " + title);
         l.setOpaque(true);
-        l.setBackground(new Color(0x2A2E36));
+        l.setBackground(CUT_BAR);
         l.setForeground(new Color(0xE6E6E6));
-        l.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        l.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
         p.add(l, BorderLayout.NORTH);
         p.add(c, BorderLayout.CENTER);
         return p;
+    }
+
+    /**
+     * @param (boolean) right true for "next"
+     * @param (String) tip tooltip
+     * @return a flat button with a drawn arrow
+     */
+    private static JButton arrowButton(boolean right, String tip)
+    {
+        JButton b = new JButton(new ArrowIcon(right));
+        b.setToolTipText(tip);
+        b.setBorderPainted(false);
+        b.setContentAreaFilled(false);
+        b.setFocusPainted(false);
+        b.setMargin(new Insets(2, 10, 2, 10));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return b;
+    }
+
+    // ------------------------------------------------------------------ the picture panel
+
+    /**
+     * @param (int) delta +1 next picture, -1 previous; both wrap around
+     */
+    private void flipPicture(int delta)
+    {
+        showPicture((picture + delta + PICTURES) % PICTURES);
+        pickMovedPicture = false;
+    }
+
+    /**
+     * @param (int) which PICTURE_CUT, or 1..3 for the Axial, Coronal and Sagittal views
+     */
+    private void showPicture(int which)
+    {
+        picture = which;
+        pictures.show(pictureCards, Integer.toString(which));
+        Color bar = CUT_BAR;
+        String title = "The cut - one frame of the video";
+        if (which != PICTURE_CUT)
+        {
+            int view = which - 1;
+            bar = OrthoView.VIEW_COLOURS[view].darker();
+            title = VolumeGeometry.name(view) + " - " + VolumeGeometry.hint(view);
+        }
+        pictureBar.setBackground(bar);
+        pictureTitle.setText(title);
+        pictureCount.setText((which + 1) + " / " + PICTURES + "  ");
     }
 
     // ------------------------------------------------------------------ volume
@@ -809,7 +614,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         chooser.setFileFilter(new FileNameExtensionFilter("NRRD volumes (*.nrrd, *.nhdr)", "nrrd", "nhdr"));
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
         {
-            openVolume(chooser.getSelectedFile(), null);
+            openVolume(chooser.getSelectedFile());
         }
     }
 
@@ -819,17 +624,17 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private void showSamplesMenu(Component anchor)
     {
         JPopupMenu menu = new JPopupMenu();
-        // Scan, its use case (opened with it), label. Only the files that exist are offered: the
-        // lecturer's scans come in the app's download, not in the repository.
+        // Only the files that exist are offered: the lecturer's scans come in the app's download,
+        // not in the repository.
         String[][] samples = {
-            {"MRHead.nrrd", "Ex0.csv", "MRHead (MRI head) + the lecturer's example CSV"},
-            {"dice.nrrd", "course/edge_cases.csv", "Dice + the lecturer's edge cases"},
-            {"lecturer/MRHead_1.nrrd", "lecturer/csv/head.csv", "Lecturer: MRHead_1 + head.csv"},
-            {"lecturer/onion.nrrd", "lecturer/csv/onion.csv", "Lecturer: onion + onion.csv"},
-            {"lecturer/croissant.nrrd", "lecturer/csv/croissant.csv", "Lecturer: croissant + croissant.csv"},
-            {"lecturer/swiss_roll.nrrd", "lecturer/csv/swiss_roll.csv", "Lecturer: swiss roll + swiss_roll.csv"},
-            {"lecturer/biscuit_cake.nrrd", "lecturer/csv/biscuit_cake.csv", "Lecturer: biscuit cake + biscuit_cake.csv"},
-            {"phantom_spheres_500.nrrd", "", "Spheres phantom (500^3, speed test)"},
+            {"MRHead.nrrd", "MRHead (MRI head)"},
+            {"dice.nrrd", "Dice (the die of the lecturer's edge cases)"},
+            {"lecturer/MRHead_1.nrrd", "Lecturer: MRHead_1 (head)"},
+            {"lecturer/onion.nrrd", "Lecturer: onion"},
+            {"lecturer/croissant.nrrd", "Lecturer: croissant"},
+            {"lecturer/swiss_roll.nrrd", "Lecturer: swiss roll"},
+            {"lecturer/biscuit_cake.nrrd", "Lecturer: biscuit cake"},
+            {"phantom_spheres_500.nrrd", "Spheres phantom (500^3, speed test)"},
         };
         for (int i = 0; i < samples.length; i++)
         {
@@ -838,23 +643,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             {
                 continue;
             }
-            final String csv = samples[i][1];
-            JMenuItem item = new JMenuItem(samples[i][2]);
+            JMenuItem item = new JMenuItem(samples[i][1]);
             item.addActionListener(new ActionListener()
             {
                 @Override
                 public void actionPerformed(ActionEvent e)
                 {
-                    File csvFile = null;
-                    if (!csv.isEmpty())
-                    {
-                        csvFile = findInProject("data", csv);
-                    }
-                    if (csvFile == null && !csv.isEmpty())
-                    {
-                        csvFile = findInProject("data/course", new File(csv).getName());
-                    }
-                    openVolume(nrrd, csvFile);
+                    openVolume(nrrd);
                 }
             });
             menu.add(item);
@@ -872,9 +667,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      * Loads a volume in the background, shows it, then builds the 3-D model.
      *
      * @param (File) file NRRD file
-     * @param (File) csvAfter CSV to load once the volume is in, or null
      */
-    void openVolume(final File file, final File csvAfter)
+    void openVolume(final File file)
     {
         if (busy || file == null)
         {
@@ -906,7 +700,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                     geometry = VolumeGeometry.of(volume);
                     volumeFile = file;
                     frame.setTitle(TITLE + " - " + file.getName() + "  (" + volume + ")");
-                    configureSliderRanges();
                     view3d.setVolume(volume, window, geometry);
                     for (int v = 0; v < 3; v++)
                     {
@@ -914,19 +707,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                         orthos[v].sync();
                     }
                     sliceChanged(0);
-                    keyframes.clear();
-                    listCsv = null;
                     recentCount = 0;
                     warmUp(PlaneSpec.triangle(volume).toPlane());
                     applySpec(PlaneSpec.triangle(volume));
                     view3d.lookAtPlane(plane);
-                    findMatchingCsv(file);
-                    buildModel(-1);
+                    showPicture(PICTURE_CUT);
+                    buildModel();
                     updateEnabled();
-                    if (csvAfter != null && csvAfter.isFile())
-                    {
-                        loadCsv(csvAfter);
-                    }
                 }
                 catch (ExecutionException e)
                 {
@@ -945,31 +732,19 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         worker.execute();
     }
 
-    /**
-     * Builds (or re-thresholds) the solid model in the background.
-     *
-     * @param (int) threshold grey level, or -1 for the automatic one
-     */
-    private void buildModel(final int threshold)
+    /** Builds the solid model in the background (its surface is found automatically). */
+    private void buildModel()
     {
         final Volume v = volume;
         final IntensityWindow w = window;
-        final SolidModel base = view3d.model();
         final int generation = ++modelGeneration;
-        if (threshold < 0)
-        {
-            view3d.setModel(null);
-        }
+        view3d.setModel(null);
         status.setText("Building the 3-D model ...");
         SwingWorker<SolidModel, Void> worker = new SwingWorker<SolidModel, Void>()
         {
             @Override
             protected SolidModel doInBackground()
             {
-                if (threshold >= 0 && base != null)
-                {
-                    return base.withThreshold(threshold);
-                }
                 return SolidModel.build(v, w);
             }
 
@@ -982,10 +757,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 }
                 try
                 {
-                    SolidModel m = get();
-                    view3d.setModel(m);
-                    surface.setValue(m.threshold());
-                    surfaceValue.setText(Integer.toString(m.threshold()));
+                    view3d.setModel(get());
                     updateEnabled();
                 }
                 catch (ExecutionException e)
@@ -999,62 +771,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             }
         };
         worker.execute();
-    }
-
-    /**
-     * @param (int) t new surface threshold from the toolbar
-     */
-    private void changeSurface(int t)
-    {
-        SolidModel m = view3d.model();
-        if (m == null || volume == null || t == m.threshold())
-        {
-            return;
-        }
-        buildModel(t);
-    }
-
-    /**
-     * Looks for the lecturer's use case of this scan: csv/NAME.csv or NAME.csv next to it, else
-     * data/course/NAME.csv of the project (MRHead uses head.csv).
-     *
-     * @param (File) nrrd the scan
-     */
-    private void findMatchingCsv(File nrrd)
-    {
-        String base = nrrd.getName().replaceFirst("\\.[^.]*$", "");
-        List<String> names = new ArrayList<String>();
-        names.add(base + ".csv");
-        if (base.toLowerCase(Locale.ROOT).startsWith("mrhead"))
-        {
-            names.add("head.csv");
-        }
-        if (base.toLowerCase(Locale.ROOT).startsWith("dice"))
-        {
-            names.add("edge_cases.csv");
-        }
-        matchingCsv = null;
-        File dir = nrrd.getAbsoluteFile().getParentFile();
-        for (int i = 0; i < names.size() && matchingCsv == null; i++)
-        {
-            File[] candidates = {new File(new File(dir, "csv"), names.get(i)), new File(dir, names.get(i)),
-                findInProject("data/course", names.get(i))};
-            for (int k = 0; k < candidates.length && matchingCsv == null; k++)
-            {
-                if (candidates[k] != null && candidates[k].isFile())
-                {
-                    matchingCsv = candidates[k];
-                }
-            }
-        }
-        if (matchingCsv != null)
-        {
-            matchingButton.setText("Load its use case: " + matchingCsv.getName());
-        }
-        else
-        {
-            matchingButton.setText("Load its use case");
-        }
     }
 
     /**
@@ -1086,13 +802,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     {
         spec = s;
         plane = s.toPlane();
-        slidersFromSpec();
         refreshViews();
     }
 
     /**
-     * Shows an arbitrary plane (a CSV row, typed or clicked points): drawn as it is; the sliders
-     * show the closest spec.
+     * Shows an arbitrary plane (typed or clicked points, a frame of the video): drawn as it is.
      *
      * @param (Plane) p plane
      */
@@ -1100,91 +814,33 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     {
         plane = p;
         spec = PlaneSpec.fromPlane(p);
-        slidersFromSpec();
         refreshViews();
     }
 
-    /** Reads the sliders into a new spec and refreshes. */
-    private void specFromSliders()
+    /**
+     * Switches between 3 and 4 points, keeping the plane's place and size.
+     *
+     * @param (boolean) four true for 4 points (trapezoid)
+     */
+    private void changeShape(boolean four)
     {
-        if (volume == null)
+        // The choice is read before anything is redrawn: stopping play or picking redraws the old
+        // plane, which sets the buttons back to its shape (that was why "4 points" did nothing).
+        stopPlay();
+        stopPicking();
+        if (plane != null && plane.isTriangle() == four)
         {
+            double top = 0.0;
+            if (four)
+            {
+                top = 0.5;
+            }
+            applySpec(spec.withShape(spec.width, top, spec.height));
             return;
         }
-        double top = sTop.getValue() / 100.0;
-        if (threePoints.isSelected())
-        {
-            top = 0.0;
-        }
-        PlaneSpec s = new PlaneSpec(
-                sx.getValue() / (double) SLIDER_SCALE, sy.getValue() / (double) SLIDER_SCALE, sz.getValue() / (double) SLIDER_SCALE,
-                sYaw.getValue(), sPitch.getValue(), sRoll.getValue(),
-                sWidth.getValue(), top, sHeight.getValue());
-        spec = s;
-        plane = s.toPlane();
-        showSliderValues();
-        refreshViews();
-    }
-
-    /** Pushes the spec into the sliders without triggering a rebuild. */
-    private void slidersFromSpec()
-    {
-        updatingSliders = true;
-        sx.setValue((int) Math.round(spec.cx * SLIDER_SCALE));
-        sy.setValue((int) Math.round(spec.cy * SLIDER_SCALE));
-        sz.setValue((int) Math.round(spec.cz * SLIDER_SCALE));
-        sYaw.setValue((int) Math.round(spec.yaw));
-        sPitch.setValue((int) Math.round(spec.pitch));
-        sRoll.setValue((int) Math.round(spec.roll));
-        sWidth.setValue((int) Math.round(spec.width));
-        sHeight.setValue((int) Math.round(spec.height));
-        sTop.setValue((int) Math.round(spec.topRatio * 100));
-        updatingSliders = false;
-        showSliderValues();
-    }
-
-    /** Slider ranges depend on the volume size; the centre may leave the box by half a size. */
-    private void configureSliderRanges()
-    {
-        int diag = (int) Math.ceil(Math.sqrt((double) volume.sizeX() * volume.sizeX()
-                + (double) volume.sizeY() * volume.sizeY() + (double) volume.sizeZ() * volume.sizeZ()));
-        updatingSliders = true;
-        sx.setMinimum(-volume.sizeX() * SLIDER_SCALE / 2);
-        sx.setMaximum(volume.sizeX() * SLIDER_SCALE * 3 / 2);
-        sy.setMinimum(-volume.sizeY() * SLIDER_SCALE / 2);
-        sy.setMaximum(volume.sizeY() * SLIDER_SCALE * 3 / 2);
-        sz.setMinimum(-volume.sizeZ() * SLIDER_SCALE / 2);
-        sz.setMaximum(volume.sizeZ() * SLIDER_SCALE * 3 / 2);
-        sWidth.setMaximum(2 * diag);
-        sHeight.setMaximum(2 * diag);
-        updatingSliders = false;
-    }
-
-    /** Writes the numeric value next to each slider. */
-    private void showSliderValues()
-    {
-        if (spec == null)
-        {
-            return;
-        }
-        double[] values = {spec.cx, spec.cy, spec.cz, spec.yaw, spec.pitch, spec.roll, spec.width, spec.height, spec.topRatio * 100};
-        for (int i = 0; i < values.length; i++)
-        {
-            String text = String.format(Locale.ROOT, "%.0f", values[i] + 0.0);
-            if (text.equals("-0"))
-            {
-                text = "0";
-            }
-            if (i >= 3 && i <= 5)
-            {
-                text += "°";
-            }
-            if (i == 8)
-            {
-                text += "%";
-            }
-            sliderValues[i].setText(text);
-        }
+        threePoints.setSelected(!four);
+        fourPoints.setSelected(four);
+        showPointRows();
     }
 
     @Override
@@ -1196,35 +852,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         stopPlay();
         applySpec(spec.slide(distance));
-    }
-
-    /**
-     * @param (String) text button label
-     * @param (int) which 0 axial, 1 coronal, 2 sagittal
-     * @return the button
-     */
-    private JButton presetButton(String text, final int which)
-    {
-        JButton b = button(text, new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent e)
-            {
-                if (volume == null)
-                {
-                    return;
-                }
-                stopPlay();
-                stopPicking();
-                // The view's own slice: the cut then looks exactly like that view.
-                fourPoints.setSelected(true);
-                showPointRows();
-                applyPlane(geometry.slicePlane(which, orthos[which].view().slice()));
-                view3d.lookAtPlane(plane);
-            }
-        });
-        b.setToolTipText("The plane of the " + text.toLowerCase(Locale.ROOT) + " view below (4 points, the whole slice)");
-        return b;
     }
 
     /** Projects the current plane once and hands the result to every view. */
@@ -1303,7 +930,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         if (problems.isEmpty())
         {
-            pointsInfo.setText(html("Type the points and press Enter, or pick them with the mouse on the views.", "#707070"));
+            pointsInfo.setText(html("Type the points and press Enter, or pick them with the mouse on the views.", HINT_COLOUR));
             return;
         }
         pointsInfo.setText(html("Not isosceles (drawn as given): " + problems.get(0) + ".", "#b06000"));
@@ -1436,7 +1063,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * Starts placing points with the mouse.
+     * Starts placing points with the mouse. The cut cannot be clicked on, so when it is the
+     * picture on show, the picture panel turns to the Axial view (and back afterwards).
      *
      * @param (int) only row to pick alone, or -1 for all points in order
      */
@@ -1459,6 +1087,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         {
             pickIndex = only;
         }
+        if (picture == PICTURE_CUT)
+        {
+            showPicture(1);
+            pickMovedPicture = true;
+        }
         setPickingViews(true);
         pickAll.setText("Stop picking");
         promptPick();
@@ -1473,6 +1106,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         picked = null;
         setPickingViews(false);
         showPointRows();
+        if (pickMovedPicture)
+        {
+            pickMovedPicture = false;
+            showPicture(PICTURE_CUT);
+        }
         if (plane != null)
         {
             refreshViews();
@@ -1494,7 +1132,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     /** Tells the user which point to click next. */
     private void promptPick()
     {
-        pointsInfo.setText(html("Click point " + pickNames[pickIndex] + " on the 3-D model or on a slice view.", "#c06000"));
+        pointsInfo.setText(html("Click point " + pickNames[pickIndex] + " on the 3-D model or on the slice picture"
+                + " (its arrows change the view, its slider the slice).", "#c06000"));
     }
 
     /**
@@ -1631,172 +1270,19 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         status.setText(String.format(Locale.ROOT, "Point (%.1f, %.1f, %.1f): the slice views now go through it", p.x, p.y, p.z));
     }
 
-    // ------------------------------------------------------------------ use cases (list)
-
-    /** Shows the selected list entry in the views. */
-    private void showSelectedKeyframe()
-    {
-        int i = list.getSelectedIndex();
-        if (i < 0 || volume == null)
-        {
-            return;
-        }
-        Keyframe k = keyframes.get(i);
-        if (k.plane != null)
-        {
-            applyPlane(k.plane);
-        }
-        else
-        {
-            showBlackFrame(k.origin, k.note);
-        }
-    }
-
-    /**
-     * No plane to draw (a bad CSV row): show what the video gets, a black frame, and why. The
-     * editor keeps the last plane, so the sliders and "Add current plane" still work from there.
-     *
-     * @param (String) origin e.g. "row 6"
-     * @param (String) why the reason, or null
-     */
-    private void showBlackFrame(String origin, String why)
-    {
-        String reason = "the row is not a plane";
-        if (why != null)
-        {
-            reason = why.replace(" -> black frame", "");
-        }
-        List<Vec3> none = new ArrayList<Vec3>();
-        List<String> noNames = new ArrayList<String>();
-        cutView.setImage(null, 0, 0, framePrefix() + origin + ": a black frame in the video - " + reason);
-        view3d.setPlane(null, none, noNames);
-        for (int v = 0; v < 3; v++)
-        {
-            orthos[v].view().setPlane(null, none, noNames);
-        }
-        if (!playTimer.isRunning())
-        {
-            status.setText(origin + " is a black frame: " + reason);
-        }
-    }
-
-    /** Appends the current plane to the list: the video is then the list, not the sweep. */
-    private void addCurrentPlane()
-    {
-        if (plane == null || busy)
-        {
-            return;
-        }
-        stopPlay();
-        keyframes.addElement(new Keyframe(plane, "plane " + (keyframes.size() + 1), firstProblem(plane)));
-        listCsv = null;
-        list.setSelectedIndex(keyframes.size() - 1);
-        list.ensureIndexIsVisible(keyframes.size() - 1);
-        updateEnabled();
-    }
-
-    /** Shows a file chooser for a CSV of planes. */
-    private void chooseCsv()
-    {
-        if (volume == null)
-        {
-            error("Open a scan first", "Load a .nrrd file before a CSV of planes.");
-            return;
-        }
-        File start = startFolder();
-        if (matchingCsv != null)
-        {
-            start = matchingCsv.getParentFile();
-        }
-        JFileChooser chooser = new JFileChooser(start);
-        chooser.setDialogTitle("Load a use case: a CSV of planes (the course format)");
-        chooser.setFileFilter(new FileNameExtensionFilter("CSV planes (*.csv)", "csv"));
-        if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
-        {
-            loadCsv(chooser.getSelectedFile());
-        }
-    }
-
-    /**
-     * Reads a CSV into the list; doubtful rows are drawn as given and bad rows become black
-     * frames, both reported (ADR-0003).
-     *
-     * @param (File) file CSV file
-     */
-    private void loadCsv(File file)
-    {
-        try
-        {
-            PlaneCsvReader.Result r = PlaneCsvReader.read(file, Plane.DEFAULT_EPS);
-            if (!r.isValid())
-            {
-                error(file.getName() + " has problems", listText(r.errors));
-                return;
-            }
-            stopPlay();
-            stopPicking();
-            keyframes.clear();
-            listCsv = file;
-            for (int i = 0; i < r.rows.size(); i++)
-            {
-                PlaneCsvReader.Entry e = r.rows.get(i);
-                String note = null;
-                if (!e.warnings.isEmpty())
-                {
-                    note = e.warnings.get(0);
-                }
-                keyframes.addElement(new Keyframe(e.plane, "row " + e.row, note));
-            }
-            List<String> warnings = r.warnings();
-            updateEnabled();
-            if (keyframes.size() > 0)
-            {
-                list.setSelectedIndex(0);
-            }
-            status.setText("Loaded " + file.getName() + ": " + r.rows.size() + " planes = the " + r.rows.size()
-                    + " frames of the video, " + warnings.size() + " note(s)");
-            if (!warnings.isEmpty())
-            {
-                JOptionPane.showMessageDialog(frame, listText(warnings)
-                        + "\n\nDoubtful rows are drawn as given; bad rows are black frames (as the course's edge cases expect).",
-                        file.getName() + ": " + warnings.size() + " note(s)", JOptionPane.WARNING_MESSAGE);
-            }
-        }
-        catch (IOException e)
-        {
-            error("Cannot read " + file.getName(), message(e));
-        }
-    }
-
     // ------------------------------------------------------------------ the video: play and export
 
     /**
-     * The video, frame by frame: the list's planes (a use case) or, when the list is empty, the
-     * current plane swept through the scan. Every plane is rounded to the CSV precision first, so
-     * the exported video, the CSV saved next to it and an Ex0 run on that CSV all describe exactly
-     * the same planes; a plane the algorithm cannot draw becomes null, a black frame.
+     * The video, frame by frame: the current plane swept through the scan, each frame rounded to
+     * the precision a CSV row would keep (so the command line, given these planes, makes the same
+     * frames); a plane the algorithm cannot draw becomes null, a black frame.
      *
-     * @return the planes in order and the frame to start playing at
+     * @return the planes in order and the frame of the current plane
      */
     private Sweep.Pass videoPass()
     {
-        List<Plane> source = new ArrayList<Plane>();
-        int start = 0;
-        if (!keyframes.isEmpty())
-        {
-            for (int i = 0; i < keyframes.size(); i++)
-            {
-                source.add(keyframes.get(i).plane);
-            }
-            start = Math.max(0, list.getSelectedIndex());
-        }
-        else
-        {
-            Sweep.Pass sweep = Sweep.through(plane, volume.sizeX(), volume.sizeY(), volume.sizeZ());
-            source = sweep.planes;
-            start = sweep.current;
-        }
-        return new Sweep.Pass(videoFrames(source), start);
+        Sweep.Pass sweep = Sweep.through(plane, volume.sizeX(), volume.sizeY(), volume.sizeZ());
+        return new Sweep.Pass(videoFrames(sweep.planes), sweep.current);
     }
 
     /**
@@ -1818,25 +1304,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         return out;
     }
 
-    /**
-     * @param (List) frames planes of a video (null = black frame)
-     * @return the rows of the CSV saved with it: frame i is row i, a black frame a row a = b = c
-     */
-    static List<Plane> csvRows(List<Plane> frames)
-    {
-        List<Plane> rows = new ArrayList<Plane>();
-        for (int i = 0; i < frames.size(); i++)
-        {
-            Plane p = frames.get(i);
-            if (p == null)
-            {
-                p = BLACK_ROW;
-            }
-            rows.add(p);
-        }
-        return rows;
-    }
-
     /** Starts or stops playing the video in the views. */
     private void togglePlay()
     {
@@ -1852,7 +1319,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         stopPicking();
         Sweep.Pass pass = videoPass();
         playSequence = pass.planes;
-        playingList = !keyframes.isEmpty();
         playIndex = pass.current;
         playStep = 1;
         playButton.setText("Stop");
@@ -1870,11 +1336,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         playTimer.stop();
         playButton.setText("Play");
         // Redraw the last frame without its frame number.
-        if (playingList)
-        {
-            showSelectedKeyframe();
-        }
-        else if (plane != null)
+        if (plane != null)
         {
             refreshViews();
         }
@@ -1893,19 +1355,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return;
         }
         Plane p = playSequence.get(playIndex);
-        if (playingList)
-        {
-            // The list follows the video (its listener ignores changes while playing).
-            list.setSelectedIndex(playIndex);
-            list.ensureIndexIsVisible(playIndex);
-        }
         if (p != null)
         {
             applyPlane(p);
-        }
-        else if (playingList)
-        {
-            showBlackFrame(keyframes.get(playIndex).origin, keyframes.get(playIndex).note);
         }
         else
         {
@@ -1925,7 +1377,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Saves the video as an MP4 in the background: one pass, first frame to last, at the rate Play
-     * shows it. When the planes are not simply a loaded CSV, they are saved next to it as a CSV.
+     * shows it. If ffmpeg on this computer fails, the same frames are written again with the
+     * built-in encoder, so an export never fails because of another program.
      */
     private void exportVideo()
     {
@@ -1936,22 +1389,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         stopPlay();
         stopPicking();
         final List<Plane> planes = videoPass().planes;
-        JFileChooser chooser = new JFileChooser(startFolder());
-        chooser.setDialogTitle("Export the video: " + planes.size() + " frames, " + seconds(planes.size()) + " s at "
-                + VIDEO_FPS + " fps");
-        chooser.setFileFilter(new FileNameExtensionFilter("MP4 video (*.mp4)", "mp4"));
-        chooser.setSelectedFile(new File(videoName() + ".mp4"));
-        if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION)
-        {
-            return;
-        }
-        final File target = withExtension(chooser.getSelectedFile(), ".mp4");
-        if (target.exists() && JOptionPane.showConfirmDialog(frame, target.getName() + " already exists. Replace it?",
-                "Export video", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION)
-        {
-            return;
-        }
-        final File fromCsv = listCsv;
         final Projector exportProjector = Projector.create(Projector.Interpolation.NEAREST, CORES);
         final FrameRenderer renderer;
         try
@@ -1961,19 +1398,49 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         catch (IllegalArgumentException e)
         {
             shutdown(exportProjector);
-            error("Nothing to export", "Every frame of this video would be black (" + message(e) + ").");
+            error("Nothing to export", "The points do not make a plane (" + message(e) + "), so every frame would be black.\n"
+                    + "Choose 3 points that are not on one line.");
+            return;
+        }
+        final File target = chooseVideoFile(planes.size());
+        if (target == null)
+        {
+            shutdown(exportProjector);
             return;
         }
         setBusy(true, "Exporting " + target.getName() + " ...");
         progress.setMaximum(renderer.frameCount());
         progress.setValue(0);
         progress.setVisible(true);
-        SwingWorker<Void, Integer> worker = new SwingWorker<Void, Integer>()
+        SwingWorker<String, Integer> worker = new SwingWorker<String, Integer>()
         {
             @Override
-            protected Void doInBackground() throws Exception
+            protected String doInBackground() throws Exception
             {
                 VideoWriter out = VideoWriters.openMp4(target, renderer.width(), renderer.height(), VIDEO_FPS);
+                try
+                {
+                    writeAll(out);
+                    return "";
+                }
+                catch (IOException ffmpegFailed)
+                {
+                    if (!VideoWriters.usesFfmpeg(out))
+                    {
+                        throw ffmpegFailed;
+                    }
+                    writeAll(VideoWriters.openBuiltInMp4(target, renderer.width(), renderer.height(), VIDEO_FPS));
+                    return "\n\nThe ffmpeg on this computer did not work, so the app's own encoder made the video.\n("
+                            + shortText(message(ffmpegFailed)) + ")";
+                }
+            }
+
+            /**
+             * @param (VideoWriter) out an open writer; closed at the end, also on failure
+             * @throws (IOException) when a frame cannot be written
+             */
+            private void writeAll(VideoWriter out) throws IOException
+            {
                 try
                 {
                     for (int i = 0; i < renderer.frameCount(); i++)
@@ -1986,7 +1453,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 {
                     out.close();
                 }
-                return null;
             }
 
             @Override
@@ -2003,12 +1469,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 setBusy(false, " ");
                 try
                 {
-                    get();
-                    String how = csvNextTo(target, planes, fromCsv);
+                    String note = get();
                     int answer = JOptionPane.showConfirmDialog(frame,
                             "Saved " + renderer.frameCount() + " frames (" + renderer.width() + " x " + renderer.height()
                                     + " pixels, " + seconds(renderer.frameCount()) + " s at " + VIDEO_FPS + " fps) to\n"
-                                    + target.getAbsolutePath() + "\n\n" + how + "\n\nOpen the video now?",
+                                    + target.getAbsolutePath() + note + "\n\nOpen the video now?",
                             "Export finished", JOptionPane.YES_NO_OPTION);
                     if (answer == JOptionPane.YES_OPTION)
                     {
@@ -2017,7 +1482,12 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 }
                 catch (ExecutionException e)
                 {
-                    error("Export failed", message(e.getCause()));
+                    // A half-written file is no video; better none than a broken one.
+                    if (target.isFile() && !target.delete())
+                    {
+                        target.deleteOnExit();
+                    }
+                    error("Export failed", exportProblem(target, e.getCause()));
                 }
                 catch (InterruptedException e)
                 {
@@ -2029,60 +1499,123 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * Records the planes of an exported video so the command line can make it again: the CSV it
-     * came from, or a new CSV next to the video (frame i = row i; a black frame is a row whose
-     * three points are the same, which Ex0 draws black too).
+     * Asks where to save the video. The name proposed is not taken yet, and an existing file
+     * chosen anyway is checked first: on Windows a video open in a player cannot be replaced.
      *
-     * @param (File) video the MP4 just written
-     * @param (List) planes its planes, null = black frame
-     * @param (File) fromCsv the CSV the planes are exactly, or null
-     * @return one sentence for the "export finished" message
+     * @param (int) frames number of frames, for the dialog title
+     * @return the file, or null when cancelled
      */
-    private String csvNextTo(File video, List<Plane> planes, File fromCsv)
+    private File chooseVideoFile(int frames)
     {
-        String scan = volumeFile.getName();
-        if (fromCsv != null)
+        File folder = startFolder();
+        JFileChooser chooser = new JFileChooser(folder);
+        chooser.setDialogTitle("Export the video: " + frames + " frames, " + seconds(frames) + " s at " + VIDEO_FPS + " fps");
+        chooser.setFileFilter(new FileNameExtensionFilter("MP4 video (*.mp4)", "mp4"));
+        chooser.setSelectedFile(freeName(folder, baseName() + "_cut", ".mp4"));
+        if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION)
         {
-            return "Its frames are the rows of " + fromCsv.getName() + ":\npython Ex0.py " + scan + " " + fromCsv.getName()
-                    + " out.mp4 makes the same video.";
+            return null;
         }
-        File csv = replaceExtension(video, ".csv");
-        if (csv.exists() && JOptionPane.showConfirmDialog(frame, csv.getName() + " already exists next to the video.\n"
-                + "Replace it with the planes of this video?", "Export video", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION)
+        File target = withExtension(chooser.getSelectedFile(), ".mp4");
+        if (!target.exists())
         {
-            return "Its planes were not saved (" + csv.getName() + " was kept).";
+            return target;
         }
+        if (JOptionPane.showConfirmDialog(frame, target.getName() + " already exists. Replace it?",
+                "Export video", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION)
+        {
+            return null;
+        }
+        if (!canReplace(target))
+        {
+            error("Cannot replace " + target.getName(), "The file is open in another program (a video player?).\n"
+                    + "Close it there, or save the video under another name.");
+            return null;
+        }
+        return target;
+    }
+
+    /**
+     * @param (File) folder where the file goes
+     * @param (String) base name without extension
+     * @param (String) ext extension with dot
+     * @return base.ext, or base_2.ext, base_3.ext ... - the first that does not exist yet
+     */
+    static File freeName(File folder, String base, String ext)
+    {
+        File f = new File(folder, base + ext);
+        for (int i = 2; f.exists() && i <= MAX_NAME_TRIES; i++)
+        {
+            f = new File(folder, base + "_" + i + ext);
+        }
+        return f;
+    }
+
+    /**
+     * @param (File) f an existing file
+     * @return whether it can be opened for writing (not locked by another program, not read-only)
+     */
+    private static boolean canReplace(File f)
+    {
+        RandomAccessFile raf = null;
         try
         {
-            PlaneCsvWriter.write(csvRows(planes), csv);
-            return "Its planes were saved next to it as " + csv.getName() + ":\npython Ex0.py " + scan + " " + csv.getName()
-                    + " out.mp4 makes the same video.";
+            raf = new RandomAccessFile(f, "rw");
+            return true;
         }
         catch (IOException e)
         {
-            return "(The CSV of its planes could not be written: " + e.getMessage() + ")";
+            return false;
+        }
+        finally
+        {
+            if (raf != null)
+            {
+                try
+                {
+                    raf.close();
+                }
+                catch (IOException e)
+                {
+                    // It was only opened to test it.
+                }
+            }
         }
     }
 
     /**
-     * @return the default file name of the video, without extension
+     * @param (File) target the video that was being written
+     * @param (Throwable) t what went wrong
+     * @return what happened in plain words, then the technical message (for a screenshot)
      */
-    private String videoName()
+    static String exportProblem(File target, Throwable t)
     {
-        if (keyframes.isEmpty())
+        String text = message(t).toLowerCase(Locale.ROOT);
+        String advice = "Try again, or save it in another folder (for example Videos or Downloads).";
+        if (text.contains("access is denied") || text.contains("permission denied") || text.contains("read-only"))
         {
-            return baseName() + "_sweep";
+            advice = "Windows did not allow the app to write in that folder.\n"
+                    + "Save it in another folder (for example Videos or Downloads).";
         }
-        if (listCsv == null)
+        else if (text.contains("used by another process") || text.contains("locked") || text.contains("cannot overwrite"))
         {
-            return baseName() + "_usecase";
+            advice = "The file is open in another program (a video player?). Close it there, or use another name.";
         }
-        String csv = listCsv.getName().replaceFirst("\\.[^.]*$", "");
-        if (csv.equalsIgnoreCase(baseName()))
+        else if (text.contains("not enough space") || text.contains("no space") || text.contains("disk full"))
         {
-            return baseName() + "_video";
+            advice = "The disk is full. Free some space, or save it on another drive.";
         }
-        return baseName() + "_" + csv;
+        else if (t instanceof OutOfMemoryError)
+        {
+            advice = "Java ran out of memory. Close other programs and try again.";
+        }
+        String name = "unknown error";
+        if (t != null)
+        {
+            name = t.getClass().getSimpleName();
+        }
+        return "The video could not be saved to\n" + target.getAbsolutePath() + "\n\n" + advice
+                + "\n\nDetails (" + name + "): " + message(t);
     }
 
     /** Says in the video panel what Play shows and Export saves. */
@@ -2090,27 +1623,27 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     {
         if (volume == null || plane == null)
         {
-            videoInfo.setText(html("Open a scan: the video is then ready to play and export.", "#707070"));
+            videoInfo.setText(html("Open a scan: the video is then ready to play and export.", HINT_COLOUR));
             return;
         }
-        String what;
-        int frames;
-        if (keyframes.isEmpty())
+        int frames = Sweep.through(plane, volume.sizeX(), volume.sizeY(), volume.sizeZ()).planes.size();
+        videoInfo.setText(html("Video = the plane moving through the whole scan: " + frames + " frames, " + seconds(frames)
+                + " s at " + VIDEO_FPS + " fps. Play runs it back and forth, Export saves it once.", null));
+    }
+
+    /**
+     * @param (String) text a message, maybe long and over several lines
+     * @return its last line, at most about one dialog line long
+     */
+    private static String shortText(String text)
+    {
+        String[] lines = text.trim().split("\\R");
+        String last = lines[lines.length - 1].trim();
+        if (last.length() > MAX_NOTE_CHARS)
         {
-            frames = Sweep.through(plane, volume.sizeX(), volume.sizeY(), volume.sizeZ()).planes.size();
-            what = "the current plane swept through the scan";
+            last = "..." + last.substring(last.length() - MAX_NOTE_CHARS);
         }
-        else
-        {
-            frames = keyframes.size();
-            what = "the " + frames + " planes in the list";
-            if (listCsv != null)
-            {
-                what = "the " + frames + " planes of " + listCsv.getName();
-            }
-        }
-        videoInfo.setText(html("Video = " + what + ": " + frames + " frames, " + seconds(frames) + " s at " + VIDEO_FPS
-                + " fps. Play runs it back and forth, Export saves it once.", null));
+        return last;
     }
 
     /**
@@ -2193,25 +1726,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Plane) p plane
-     * @return the first rule it breaks, or null
-     */
-    private static String firstProblem(Plane p)
-    {
-        String bad = p.whyNotRenderable();
-        if (bad != null)
-        {
-            return bad;
-        }
-        List<String> problems = p.validate(Plane.DEFAULT_EPS);
-        if (problems.isEmpty())
-        {
-            return null;
-        }
-        return problems.get(0);
-    }
-
-    /**
      * @param (double) v coordinate
      * @return short text for a field
      */
@@ -2252,22 +1766,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private void updateEnabled()
     {
         boolean haveVolume = volume != null && !busy;
-        JSlider[] sliders = {sx, sy, sz, sYaw, sPitch, sRoll, sWidth, sHeight, sTop};
-        for (int i = 0; i < sliders.length; i++)
-        {
-            sliders[i].setEnabled(haveVolume);
-        }
-        sTop.setEnabled(haveVolume && fourPoints.isSelected());
-        surface.setEnabled(haveVolume && view3d.model() != null);
-        // There is always a video once a scan is open: the list, or the sweep of the current plane.
+        // There is always a video once a scan is open: the current plane swept through it.
         playButton.setEnabled(haveVolume);
         exportButton.setEnabled(haveVolume);
-        show(matchingButton, matchingCsv != null);
-        matchingButton.setEnabled(haveVolume && matchingCsv != null);
         pickAll.setEnabled(haveVolume);
-        // The list only shows when it holds planes; empty, the video is the sweep.
-        show(listScroll, !keyframes.isEmpty());
-        show(listButtons, !keyframes.isEmpty());
         updateVideoInfo();
         updateStatus();
     }
@@ -2330,45 +1832,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (int) min minimum
-     * @param (int) max maximum
-     * @param (int) value initial value
-     * @return a horizontal slider
-     */
-    private static JSlider slider(int min, int max, int value)
-    {
-        JSlider s = new JSlider(min, max, value);
-        s.setEnabled(false);
-        return s;
-    }
-
-    /**
-     * @param (List) lines messages
-     * @return the first lines, one per line, plus a count of the rest
-     */
-    private static String listText(List<String> lines)
-    {
-        StringBuilder sb = new StringBuilder();
-        int shown = Math.min(lines.size(), MAX_LIST_LINES_IN_DIALOG);
-        for (int i = 0; i < shown; i++)
-        {
-            sb.append(lines.get(i)).append('\n');
-        }
-        if (lines.size() > shown)
-        {
-            sb.append("... and ").append(lines.size() - shown).append(" more");
-        }
-        return sb.toString().trim();
-    }
-
-    /**
      * @return name of the volume file without extension
      */
     private String baseName()
     {
         if (volumeFile == null)
         {
-            return "planes";
+            return "video";
         }
         return volumeFile.getName().replaceFirst("\\.[^.]*$", "");
     }
@@ -2385,22 +1855,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return f;
         }
         return new File(f.getPath() + ext);
-    }
-
-    /**
-     * @param (File) f file
-     * @param (String) ext new extension with dot
-     * @return f with its extension replaced (or appended when it has none)
-     */
-    private static File replaceExtension(File f, String ext)
-    {
-        String name = f.getName();
-        int dot = name.lastIndexOf('.');
-        if (dot > 0)
-        {
-            name = name.substring(0, dot);
-        }
-        return new File(f.getParentFile(), name + ext);
     }
 
     /**
@@ -2440,7 +1894,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return folder to start file choosers in
+     * @return folder to start file choosers in: the scan's, else the samples', else home
      */
     private File startFolder()
     {
@@ -2457,7 +1911,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) f file to open with the system's default app
+     * @param (File) f the saved video, to open with the system's default player
      */
     private void openInSystem(File f)
     {
@@ -2467,7 +1921,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         catch (Exception e)
         {
-            error("Cannot open video", "The video was saved to\n" + f.getAbsolutePath());
+            // Not an error of the export: the video is saved, the computer just has no player for it here.
+            JOptionPane.showMessageDialog(frame, "The video is saved, but no program opened it:\n" + f.getAbsolutePath()
+                    + "\nOpen it from its folder.", "Export video", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -2495,6 +1951,49 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return t.getClass().getSimpleName();
         }
         return t.getMessage();
+    }
+
+    /** A filled triangle pointing left or right: drawn, so no font needs an arrow glyph. */
+    private static final class ArrowIcon implements Icon
+    {
+        private static final int SIZE = 16;
+        private final boolean right;
+
+        /**
+         * @param (boolean) right true points right
+         */
+        ArrowIcon(boolean right)
+        {
+            this.right = right;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g0, int x, int y)
+        {
+            Graphics2D g = (Graphics2D) g0.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(Color.WHITE);
+            int[] xs = {x + SIZE - 4, x + 3, x + SIZE - 4};
+            if (right)
+            {
+                xs = new int[] {x + 4, x + SIZE - 3, x + 4};
+            }
+            int[] ys = {y + 1, y + SIZE / 2, y + SIZE - 1};
+            g.fillPolygon(xs, ys, 3);
+            g.dispose();
+        }
+
+        @Override
+        public int getIconWidth()
+        {
+            return SIZE;
+        }
+
+        @Override
+        public int getIconHeight()
+        {
+            return SIZE;
+        }
     }
 
     /** The control column: as wide as the scroll pane, only scrolls vertically. */
@@ -2533,7 +2032,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
-    /** Accepts files dragged from the file manager: .nrrd/.nhdr volumes or .csv plane lists. */
+    /** Accepts a .nrrd/.nhdr volume dragged from the file manager. */
     private final class FileDrop extends TransferHandler
     {
         private static final long serialVersionUID = 1L;
@@ -2562,20 +2061,16 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 String name = f.getName().toLowerCase(Locale.ROOT);
                 if (name.endsWith(".csv"))
                 {
-                    if (volume == null)
-                    {
-                        error("Open a scan first", "Drop or open a .nrrd file before a CSV of planes.");
-                        return false;
-                    }
-                    loadCsv(f);
-                    return true;
+                    JOptionPane.showMessageDialog(frame, "Lists of planes (CSV) are for the command line:\n"
+                            + "python Ex0.py scan.nrrd " + f.getName() + " out.mp4", "CSV file", JOptionPane.INFORMATION_MESSAGE);
+                    return false;
                 }
                 if (!name.endsWith(".nrrd") && !name.endsWith(".nhdr"))
                 {
-                    error("Unsupported file", f.getName() + " is not a .nrrd, .nhdr or .csv file.");
+                    error("Unsupported file", f.getName() + " is not a .nrrd or .nhdr scan.");
                     return false;
                 }
-                openVolume(f, null);
+                openVolume(f);
                 return true;
             }
             catch (Exception e)

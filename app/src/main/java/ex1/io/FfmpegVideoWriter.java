@@ -50,7 +50,7 @@ public final class FfmpegVideoWriter implements VideoWriter
         this.log.deleteOnExit();
 
         List<String> cmd = new ArrayList<String>();
-        cmd.add("ffmpeg");
+        cmd.add(VideoWriters.ffmpegProgram());
         cmd.add("-y");
         cmd.add("-loglevel");
         cmd.add("error");

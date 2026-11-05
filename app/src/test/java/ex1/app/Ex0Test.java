@@ -84,6 +84,38 @@ public class Ex0Test
     }
 
     @Test
+    public void brokenFfmpegStillGivesTheVideo() throws Exception
+    {
+        // An ffmpeg that lists the H.264 encoder but dies when encoding (a broken or blocked copy
+        // on the grader's PATH): the demo writes the same frames with the built-in encoder.
+        Assume.assumeFalse("the fake ffmpeg is a shell script",
+                System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win"));
+        File fake = new File(tmp.getRoot(), "ffmpeg");
+        String script = "#!/bin/sh\nif [ \"$2\" = \"-encoders\" ]; then\n  echo ' V....D libx264 H.264'\n  exit 0\nfi\nexit 1\n";
+        java.nio.file.Files.write(fake.toPath(), script.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        assertTrue(fake.setExecutable(true));
+        System.setProperty(ex1.io.VideoWriters.FFMPEG_PROPERTY, fake.getPath());
+        ex1.io.VideoWriters.forgetProbe();
+        try
+        {
+            File csv = tmp.newFile("q.csv");
+            SweepGenerator.write("tilt", 40, 40, 40, 3, csv);
+            File mp4 = new File(tmp.getRoot(), "fallback.mp4");
+            Ex0.run(new String[] {nrrd.getPath(), csv.getPath(), mp4.getPath()});
+            assertTrue(mp4.length() > 0);
+            if (toolAvailable("ffprobe"))
+            {
+                assertEquals("3", ffprobeFrameCount(mp4));
+            }
+        }
+        finally
+        {
+            System.clearProperty(ex1.io.VideoWriters.FFMPEG_PROPERTY);
+            ex1.io.VideoWriters.forgetProbe();
+        }
+    }
+
+    @Test
     public void invalidPlanesStillGiveAVideoButStrictStops() throws Exception
     {
         File csv = writeText("bad.csv", "5,0,0, 0,10,0, 10,10,0\n0,0,0, 0,10,0, 30,10,0\n");

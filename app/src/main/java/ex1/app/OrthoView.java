@@ -653,8 +653,9 @@ final class OrthoView extends JComponent
         /**
          * @param (int) view view
          * @param (Host) host receives clicks
+         * @param (boolean) withName false when the panel's container already names the view
          */
-        Panel(final int view, Host host)
+        Panel(final int view, Host host, boolean withName)
         {
             super(new BorderLayout());
             ortho = new OrthoView(view, host);
@@ -684,7 +685,11 @@ final class OrthoView extends JComponent
                     }
                 }
             });
-            bar.add(name, BorderLayout.WEST);
+            if (withName)
+            {
+                bar.add(name, BorderLayout.WEST);
+            }
+            slider.setToolTipText("Which slice of the scan this view shows");
             bar.add(slider, BorderLayout.CENTER);
             bar.add(position, BorderLayout.EAST);
             add(bar, BorderLayout.NORTH);

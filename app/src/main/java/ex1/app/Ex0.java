@@ -36,7 +36,7 @@ public final class Ex0
 
     private static final String USAGE =
             "Usage: java -jar Ex0.jar <file.nrrd> <file.csv> <file.mp4> [options]\n"
-            + "       java -jar Ex0.jar [file.nrrd [file.csv]]   (opens the app: cut the model interactively)\n"
+            + "       java -jar Ex0.jar [file.nrrd]   (opens the app: choose 3 points, see the model cut open)\n"
             + "Options:\n"
             + "  --interp nearest|trilinear   sampling (default nearest)\n"
             + "  --fps N                      video frame rate (default 10)\n"
@@ -83,8 +83,8 @@ public final class Ex0
     // ===================================================================== ENTRY
 
     /**
-     * No arguments, one file (a volume) or two files (volume + CSV of planes): open the app.
-     * Three files: the command-line demo of the assignment (volume, CSV, output video).
+     * No arguments or one file (a volume): open the app. Three files: the command-line demo of
+     * the assignment (volume, CSV of planes, output video) - CSV files are read only here.
      *
      * @param (String[]) args nrrd, csv, mp4, then options
      */
@@ -99,16 +99,11 @@ public final class Ex0
                 System.exit(EXIT_USAGE);
             }
             File volume = null;
-            File csv = null;
-            if (args.length >= 1)
+            if (args.length == 1)
             {
                 volume = new File(args[0]);
             }
-            if (args.length == 2)
-            {
-                csv = new File(args[1]);
-            }
-            StudioApp.launch(volume, csv);
+            StudioApp.launch(volume);
             return;
         }
         int code = EXIT_OK;
@@ -155,7 +150,7 @@ public final class Ex0
      */
     private static boolean opensTheApp(String[] args)
     {
-        if (args.length > 2)
+        if (args.length > 1)
         {
             return false;
         }
@@ -360,7 +355,9 @@ public final class Ex0
 
     /**
      * Projects every plane and writes the frames. One image and one frame buffer are reused
-     * for the whole run.
+     * for the whole run. If ffmpeg fails half-way (a broken or blocked copy on this computer),
+     * the same frames are written again with the built-in encoder, so the video is never lost
+     * to another program.
      *
      * @param (FrameRenderer) renderer turns plane i into frame i
      * @param (Options) opt options
@@ -370,14 +367,52 @@ public final class Ex0
     {
         int fw = renderer.width();
         int fh = renderer.height();
+        long projectNanos;
+        try
+        {
+            VideoWriter mp4 = VideoWriters.openMp4(opt.mp4, fw, fh, opt.fps);
+            try
+            {
+                projectNanos = writeFrames(renderer, opt, mp4);
+            }
+            catch (IOException ffmpegFailed)
+            {
+                if (!VideoWriters.usesFfmpeg(mp4))
+                {
+                    throw ffmpegFailed;
+                }
+                System.err.println("Warning : " + ffmpegFailed.getMessage().trim()
+                        + " - writing the video with the built-in encoder instead");
+                projectNanos = writeFrames(renderer, opt, VideoWriters.openBuiltInMp4(opt.mp4, fw, fh, opt.fps));
+            }
+        }
+        catch (IOException e)
+        {
+            throw new ExitException(EXIT_OUTPUT, e.getMessage());
+        }
+        double ms = projectNanos / NANOS_PER_MS;
+        System.out.printf(Locale.ROOT, "Projection: %d frames in %.1f ms (%.0f fps, I/O excluded)%n",
+                renderer.frameCount(), ms, renderer.frameCount() * 1000.0 / Math.max(ms, 1e-3));
+        System.out.println("Wrote   : " + opt.mp4);
+    }
+
+    /**
+     * @param (FrameRenderer) renderer turns plane i into frame i
+     * @param (Options) opt options (--frames adds a PNG writer)
+     * @param (VideoWriter) mp4 the open MP4 writer; closed here, also on failure
+     * @return nanoseconds spent projecting
+     * @throws (IOException) when a frame cannot be written
+     */
+    private static long writeFrames(FrameRenderer renderer, Options opt, VideoWriter mp4) throws IOException
+    {
         List<VideoWriter> writers = new ArrayList<VideoWriter>();
+        writers.add(mp4);
         long projectNanos = 0;
         try
         {
-            writers.add(VideoWriters.openMp4(opt.mp4, fw, fh, opt.fps));
             if (opt.framesDir != null)
             {
-                writers.add(new PngFrameWriter(opt.framesDir, fw, fh));
+                writers.add(new PngFrameWriter(opt.framesDir, renderer.width(), renderer.height()));
             }
             for (int i = 0; i < renderer.frameCount(); i++)
             {
@@ -393,12 +428,9 @@ public final class Ex0
         catch (IOException e)
         {
             closeQuietly(writers);
-            throw new ExitException(EXIT_OUTPUT, e.getMessage());
+            throw e;
         }
-        double ms = projectNanos / NANOS_PER_MS;
-        System.out.printf(Locale.ROOT, "Projection: %d frames in %.1f ms (%.0f fps, I/O excluded)%n",
-                renderer.frameCount(), ms, renderer.frameCount() * 1000.0 / Math.max(ms, 1e-3));
-        System.out.println("Wrote   : " + opt.mp4);
+        return projectNanos;
     }
 
     // ========================================================= LOW-LEVEL HELPERS
