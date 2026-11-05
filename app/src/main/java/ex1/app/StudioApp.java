@@ -708,6 +708,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 try
                 {
                     view3d.setModel(get());
+                    measureSpeed();
                     updateEnabled();
                 }
                 catch (ExecutionException e)
@@ -901,11 +902,43 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return;
         }
         fpsShownAt = now;
+        showFps();
+    }
+
+    /** Shows the median of the recent projection times as frames per second. */
+    private void showFps()
+    {
         int n = Math.min(recentCount, FPS_SAMPLES);
+        if (n == 0)
+        {
+            return;
+        }
         double[] sorted = Arrays.copyOf(recentMs, n);
         Arrays.sort(sorted);
         double median = sorted[n / 2];
         fpsLabel.setText(String.format(Locale.ROOT, "Projection: %.0f FPS", 1000.0 / Math.max(median, 1e-3)));
+    }
+
+    /**
+     * Times the current plane again once the 3-D model is built: while a scan loads, building
+     * the model takes the cores and the first number would be far too low.
+     */
+    private void measureSpeed()
+    {
+        if (volume == null || plane == null || !plane.isRenderable())
+        {
+            return;
+        }
+        recentCount = 0;
+        for (int i = 0; i < FPS_SAMPLES; i++)
+        {
+            long t0 = System.nanoTime();
+            projector.project(volume, plane);
+            recentMs[recentCount % FPS_SAMPLES] = (System.nanoTime() - t0) / NANOS_PER_MS;
+            recentCount++;
+        }
+        fpsShownAt = System.currentTimeMillis();
+        showFps();
     }
 
     // ------------------------------------------------------------------ points editor
