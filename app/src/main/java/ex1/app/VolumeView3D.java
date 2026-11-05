@@ -365,13 +365,6 @@ final class VolumeView3D extends JComponent
             g.setColor(new Color(230, 230, 230));
             g.drawString(message, (w - g.getFontMetrics().stringWidth(message)) / 2, 22);
         }
-        else if (model != null && lastRenderNanos > 0)
-        {
-            g.setColor(new Color(110, 116, 128));
-            String info = String.format(java.util.Locale.ROOT, "%.0f ms, %d thread(s), surface at grey %d",
-                    lastRenderNanos / 1e6, renderer.threads(), model.threshold());
-            g.drawString(info, w - g.getFontMetrics().stringWidth(info) - 8, 16);
-        }
     }
 
     /** The 12 edges of the volume's bounding box, hidden behind the object where they pass. */

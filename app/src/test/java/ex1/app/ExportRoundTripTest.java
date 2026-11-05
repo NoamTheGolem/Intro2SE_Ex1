@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import ex1.core.IntensityWindow;
 import ex1.core.Plane;
 import ex1.core.Projector;
+import ex1.core.Vec3;
 import ex1.core.Volume;
 import ex1.core.VoxelType;
 import ex1.io.PlaneCsvReader;
@@ -34,12 +35,13 @@ public class ExportRoundTripTest
                 IntensityWindow.DEFAULT_LOW_PERCENTILE, IntensityWindow.DEFAULT_HIGH_PERCENTILE);
         PlaneSpec from = new PlaneSpec(31.5, 31.5, 31.5, 30, -20, 0, 50, 1.0, 44);
         PlaneSpec to = new PlaneSpec(40.25, 20.75, 33.0, -75, 40, 25, 38, 0.0, 61);
-        List<Plane> inApp = new ArrayList<Plane>();
+        List<Plane> source = new ArrayList<Plane>();
         for (int k = 0; k <= 12; k++)
         {
-            // As StudioApp.expandedPlanes(): interpolate, then round to the CSV precision.
-            inApp.add(PlaneCsvWriter.quantize(PlaneSpec.lerp(from, to, k / 12.0).toPlane()));
+            source.add(PlaneSpec.lerp(from, to, k / 12.0).toPlane());
         }
+        // As StudioApp.videoPass(): round to the CSV precision.
+        List<Plane> inApp = StudioApp.videoFrames(source);
 
         File csv = File.createTempFile("ex1-export", ".csv");
         csv.deleteOnExit();
@@ -48,6 +50,42 @@ public class ExportRoundTripTest
         assertTrue(back.errors.toString(), back.isValid());
         assertTrue(back.warnings().toString(), back.warnings().isEmpty());
         assertEquals(inApp.size(), back.planes().size());
+
+        Projector nn = Projector.create(Projector.Interpolation.NEAREST);
+        FrameRenderer app = new FrameRenderer(volume, inApp, window, nn);
+        FrameRenderer cli = new FrameRenderer(volume, back.planes(), window, nn);
+        assertEquals(app.width(), cli.width());
+        assertEquals(app.height(), cli.height());
+        for (int i = 0; i < inApp.size(); i++)
+        {
+            assertArrayEquals("frame " + i, app.render(i), cli.render(i));
+        }
+    }
+
+    @Test
+    public void defaultSweepVideoWithABlackFrameEqualsCommandLineFramesOfItsCsv() throws IOException
+    {
+        // The app's video when no use case is loaded: an oblique triangle swept through the scan,
+        // here with a plane the algorithm cannot draw (a list row a = b = c) in the middle.
+        Volume volume = PhantomGenerator.build("spheres", VoxelType.UINT8, 48);
+        IntensityWindow window = IntensityWindow.fromPercentiles(volume,
+                IntensityWindow.DEFAULT_LOW_PERCENTILE, IntensityWindow.DEFAULT_HIGH_PERCENTILE);
+        Plane start = new PlaneSpec(23.5, 23.5, 23.5, 35, -25, 10, 40, 0.0, 36).toPlane();
+        List<Plane> source = new ArrayList<Plane>(Sweep.through(start, 48, 48, 48).planes);
+        int black = source.size() / 2;
+        Vec3 o = new Vec3(5, 5, 5);
+        source.set(black, Plane.triangle(o, o, o));
+        List<Plane> inApp = StudioApp.videoFrames(source);
+        assertEquals(null, inApp.get(black));
+
+        File csv = File.createTempFile("ex1-sweep", ".csv");
+        csv.deleteOnExit();
+        PlaneCsvWriter.write(StudioApp.csvRows(inApp), csv);
+        PlaneCsvReader.Result back = PlaneCsvReader.read(csv, Plane.DEFAULT_EPS);
+        assertTrue(back.errors.toString(), back.isValid());
+        // Frame i is row i: the black frame is a row too, so the numbering does not shift.
+        assertEquals(inApp.size(), back.planes().size());
+        assertEquals(null, back.planes().get(black));
 
         Projector nn = Projector.create(Projector.Interpolation.NEAREST);
         FrameRenderer app = new FrameRenderer(volume, inApp, window, nn);
