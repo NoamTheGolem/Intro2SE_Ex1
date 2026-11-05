@@ -5,7 +5,9 @@
 **Version:** 3.1 · 3.0 added the interactive app (REQ-18…REQ-24, UC-02, UC-05); **3.1** aligns the
 CSV rules with the lecturer's test data (REQ-04…REQ-07), shows the scan as a solid cut open by the
 plane (REQ-19), and adds Slicer's three views, choosing the plane by 3 points and the lecturer's
-use cases (REQ-25…REQ-27); 3.1.1 (4 Nov) adds NFR-11: download and run, nothing to install · **Status:** all requirements implemented and verified
+use cases (REQ-25…REQ-27); 3.1.1 (4 Nov) adds NFR-11: download and run, nothing to install; **3.2** (5 Nov) makes the
+video what Play shows — the list or a sweep of the current plane, played back and forth, exported in one click at 10 fps —
+and the app nearest-neighbour only, with the projection speed shown (REQ-11, REQ-20…REQ-24, [ADR-0011](adr/0011-the-video-is-what-play-shows.md)) · **Status:** all requirements implemented and verified
 **Related documents:** [SDD](SDD.md) (architecture) · [ALGORITHM / EDD](ALGORITHM.md) (detailed design of the
 projection) · [STP/STD](TESTING.md) (tests) · [ADRs](adr/) · [Experiment](EXPERIMENT.md)
 
@@ -134,7 +136,7 @@ installed, for smaller files). Reference performance platform: a 2020+ laptop CP
 | **REQ-08** | With `--strict`, any warning of REQ-07 shall stop the program with exit code 2 and no video written. | Should |
 | **REQ-09** | A valid plane shall be projected by the algorithm of the assignment as detailed in [ALGORITHM.md §3](ALGORITHM.md): rows `y = 0…⌊Dab⌋`, one unit per step along both rails and along each row, every row centred in the image. | Must |
 | **REQ-10** | Sample points outside `M` and pixels outside the plane shape shall have value 0. | Must |
-| **REQ-11** | Sampling shall be nearest-neighbour by default (`M[round(p)]`) and trilinear with `--interp trilinear`. | Must / Should |
+| **REQ-11** | Sampling shall be nearest-neighbour (`M[round(p)]`, the sheet's `M[p]`) — the only sampling of the app; the command line also offers trilinear with `--interp trilinear`. | Must / Could |
 | **REQ-12** | Intensities shall be mapped to 0–255 with one global linear window for the whole run (default: 0.5 % – 99.5 % percentiles of the volume, or `[min, max]` when the volume has ≤ 16 distinct grey levels; `--window LO HI` overrides). | Must |
 | **REQ-13** | All frames of a video shall have one size (largest plane, rounded up to even); each frame is centred on black. | Must |
 | **REQ-14** | The MP4 shall be playable without extra software on the viewer's side (H.264 in an ISO-BMFF container) and shall be written without any external program; ffmpeg shall be used automatically when present. | Must |
@@ -143,11 +145,11 @@ installed, for smaller files). Reference performance platform: a 2020+ laptop CP
 | **REQ-17** | Generators shall produce demo plane lists (sweep / rotate / tilt / triangle) and synthetic volumes (spheres, checkerboard, gradient, the die of the lecturer's edge cases) whose cross-sections are known. | Should |
 | **REQ-18** | The app shall open a scan from a file dialog, from a `.nrrd`/`.nhdr` file dropped on the window or on the launcher icon, or from the bundled samples; it shall show the scan's name, size, type and voxel spacing, and report unreadable files in a dialog. | Must |
 | **REQ-19** | The app shall show the scan **as a solid object, cut open by the current plane**: the half of the object between the viewer and the plane is removed, and the cut face shows the scan's own grey values — the inside of the object (full brightness inside the triangle/trapezoid, darker outside it) — next to the shaded outer surface, with the volume's box, the outline of the plane and its points. The surface threshold shall default to an automatic value and be adjustable; the cut can be switched off to see the whole object. The view shall orbit with the mouse, zoom with Ctrl+wheel, move the plane with the wheel, and reset on double-click. | Must |
-| **REQ-20** | The app shall show the cut of the current plane as a 2-D image identical to the video frame (REQ-09…REQ-13), with its size, validity and projection time, and shall update all views after every change (the 2-D cut within one frame time, NFR-01; the 3-D view interactively, NFR-10). | Must |
-| **REQ-21** | The plane shall be editable (a) by its points — 3 or 4, typed, with a *Make isosceles* action — and (b) as centre (x, y, z), yaw / pitch / roll, width, height and top/bottom ratio (0 % = triangle, 100 % = rectangle) with presets Axial / Coronal / Sagittal / Triangle / Oblique, "slice through" steps and the mouse wheel moving it along its normal; every slider position is a valid plane of REQ-06. The plane's CSV row (REQ-04, course order) and whether it is valid / doubtful / bad shall be shown live. | Must |
-| **REQ-22** | The app shall keep an ordered *use-case list* of planes: add the current plane, replace, remove, move up/down, clear, select to view; load from a CSV in the course format (rows kept and warned exactly as REQ-07, bad rows as black frames) and save to it. | Must |
-| **REQ-23** | The app shall optionally insert *N* interpolated planes between consecutive list entries (shortest-arc rotation, linear position and size), every interpolated plane being valid, and shall preview the sequence (Play). | Should |
-| **REQ-24** | The app shall export the sequence as an MP4 (REQ-14, chosen fps) and write the CSV of the exported frames next to it with exact numbers, so that `Ex0 volume.nrrd that.csv out.mp4` reproduces the video byte for byte. | Must |
+| **REQ-20** | The app shall show the cut of the current plane as a 2-D image identical to the video frame (REQ-09…REQ-13), with its size, and shall update all views after every change (the 2-D cut within one frame time, NFR-01; the 3-D view interactively, NFR-10). The toolbar shall show the projection speed in frames per second: the median of the last 15 projections of the current plane (nearest neighbour, one thread, drawing not counted). | Must |
+| **REQ-21** | The plane shall be editable (a) by its points — 3 or 4, typed (Enter applies) — with a *Make isosceles* action offered while the plane is doubtful, and (b) by the presets Axial / Coronal / Sagittal and, folded away until asked for, sliders for centre (x, y, z), yaw / pitch / roll, width, height and top/bottom ratio (0 % = triangle, 100 % = rectangle); the mouse wheel moves it along its normal; every slider position is a valid plane of REQ-06. Next to the points only problems shall be shown: *doubtful* with the rule it breaks, *bad* (a black frame) with the reason. | Must |
+| **REQ-22** | The app shall keep an ordered *use-case list* of planes: load it from a CSV in the course format (rows kept and warned exactly as REQ-07, bad rows as black frames), add the current plane, remove, clear, select a row to view it. The list shall only be shown when it is not empty. | Must |
+| **REQ-23** | The app's **video** shall be the list when it is not empty, otherwise the current plane **swept through the scan**: copies of it moved along its normal in whole-voxel steps (about 150 frames whatever the scan's size) from where its plane first meets the volume's box to where it last does. **Play** shall show the video in all views at the video's rate, **back and forth** until Stop, from the current plane (or the selected row); a bad row shows as a black frame with its reason. | Must |
+| **REQ-24** | **Export video** shall save one pass of that video (first frame to last) as an MP4 (REQ-14) at 10 fps, the Ex0 default, with nothing to collect by hand first. When the video is not exactly a loaded CSV, its planes shall be written next to it as a CSV with exact numbers (a black frame as a row whose three points coincide), so that `Ex0 volume.nrrd that.csv out.mp4` reproduces the video byte for byte; a loaded CSV already does. | Must |
 | **REQ-25** | The app shall show the three standard slice views of 3D Slicer — **Axial** (from above), **Coronal** (from the front), **Sagittal** (from the side) — oriented by the NRRD's patient axes with A/P, R/L, S/I labels (index axes when the file has no such header), each with a slider for its slice, the line where the cutting plane crosses the slice, the plane's points and the other two slices' crosshair. | Must |
 | **REQ-26** | The user shall be able to **choose the plane by picking its 3 (or 4) points with the mouse** on any slice view or on the 3-D object (surface or cut face). Picked points that are not exactly isosceles shall be made valid by moving only `c` along `a→c` (triangle) or by the nearest isosceles trapezoid, and the app shall say what it changed. Each point can be re-picked alone. | Must |
 | **REQ-27** | When a scan is opened, the app shall find the lecturer's use case for it — `csv/NAME.csv` or `NAME.csv` next to the scan, or `data/course/NAME.csv` (`MRHead*` → `head.csv`) — and offer to load it with one click. | Should |
@@ -206,7 +208,7 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | **NFR-05 Determinism** | Same inputs → byte-identical frames, regardless of thread count. | `ParallelProjectorTest`, CI frame diff |
 | **NFR-06 Portability** | Builds and tests pass on Linux and Windows with JDK 17 and 21, offline. | CI matrix |
 | **NFR-07 Maintainability** | Javadoc on every method; `-Xlint:all -Werror`; `core` free of desktop APIs. | Build, review |
-| **NFR-08 Usability** | A user without a terminal can start the app by double-click, see a scan cut open in ≤ 2 actions, choose a cut by 3 points in ≤ 4 clicks, and export a video of the lecturer's use case in ≤ 4 actions. | Manual test script TC-91…TC-105 (Windows) |
+| **NFR-08 Usability** | A user without a terminal can start the app by double-click, see a scan cut open in ≤ 2 actions, choose a cut by 3 points in ≤ 4 clicks, and export a video in ≤ 3 actions (Samples → a scan, Export video…, Enter). Only the controls these tasks need are on screen; the sliders are folded away. | Manual test script TC-91…TC-105 (Windows) |
 | **NFR-09 Portability of the UI** | The app uses only the JDK (Swing + a software renderer, no OpenGL/JavaFX) so it runs on any JDK 17+; its model/plane code (`PlaneSpec`, `Raster`, `Camera3D`, `SolidModel`, `CutawayRenderer`) has no desktop-only dependency beyond `java.awt.image` for the final blit. | Build, review |
 | **NFR-11 Download and run** | On Windows x64 the app shall start by double-clicking `Ex1.exe` right after downloading (and unzipping) the repository, with no Java installation, no build step and no other software; `python Ex0.py …` and `Ex0.bat …` shall likewise run with only the files of the repository. | TC-106 (manual, a PC without Java; Wine smoke test), CI Windows demo step |
 | **NFR-10 Interactivity of the 3-D view** | On a 256×256×130 scan the cut-open view shall redraw at ≥ 10 frames per second while the plane or camera moves (half resolution), and sharpen to full resolution within 0.5 s after the last change; the solid model of a 256×256×130 scan shall be ready within 2 s, in the background. | EXPERIMENT §7 (measured on a 2-vCPU VM) |
@@ -244,20 +246,22 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
   the volume → the cut shows black where there is no data (REQ-10).
 * **Postcondition:** none (nothing is written).
 
-### UC-05 Build a use case and extract its video (student / grader)
+### UC-05 Extract the video of a use case (student / grader)
 * **Actor:** anyone with the app · **Precondition:** UC-02 done (a scan is open).
-* **Main flow:** 1. User positions a plane and clicks **Add current**; repeats for every plane
-  of the use case — or clicks **Load its use case: NAME.csv** (REQ-27) / **Load use case
-  (CSV)…** and picks a file in the course format. 2. The list shows one line per plane; clicking a
-  line shows that plane on the object and its cut. 3. Optionally the user sets **Frames between**
-  for a smooth video and **Play** previews the sequence. 4. User clicks **Export video…**, picks a
-  file name and fps. 5. System renders every frame in the background with a progress bar, writes
-  the MP4 and the CSV of the frames next to it, and offers to open the video.
+* **Main flow:** 1. User clicks **Load its use case: NAME.csv** (REQ-27) or **Load use case
+  (CSV)…** and picks a file in the course format — or skips this step: the video is then the
+  current plane swept through the scan (REQ-23). 2. The list shows one line per plane; clicking a
+  line shows that plane on the object and its cut. 3. **Play** runs the video back and forth in
+  all views at 10 fps; **Stop** keeps the frame on screen. 4. User clicks **Export video…** and
+  accepts the proposed name (`<scan>_<csv>.mp4`, or `<scan>_sweep.mp4`). 5. System renders every
+  frame in the background with a progress bar, writes the MP4 (and, for a sweep or a list made by
+  hand, the CSV of its planes next to it) and offers to open the video.
 * **Alternatives:** 1a. CSV with doubtful or bad rows → dialog listing the warnings; rows kept
-  (REQ-07). 4a. Empty list → message. 5a. Not writable → error dialog. 5b. ffmpeg absent →
-  built-in encoder, larger file, same frames.
-* **Postcondition:** `name.mp4` + `name.csv`; `Ex0 volume.nrrd name.csv x.mp4` gives the same
-  frames.
+  (REQ-07). 1b. User builds the list with **Add current plane** instead. 4a. The file exists →
+  "Replace it?". 5a. Every frame would be black → message, nothing written. 5b. Not writable →
+  error dialog. 5c. ffmpeg absent → built-in encoder, larger file, same frames.
+* **Postcondition:** `name.mp4` (+ `name.csv`); `Ex0 volume.nrrd <its CSV> x.mp4` gives the same
+  file.
 
 ### UC-03 Prove the performance requirement
 * **Actor:** team member / grader. **Flow:** `java -cp build/Ex0.jar ex1.app.Benchmark 500` →
@@ -296,9 +300,9 @@ frames (built-in path), frame rate `--fps`, frame count = CSV data rows.
 | REQ-19 | UC-02 | `SolidModel`, `CutawayRenderer`, `VolumeView3D` ([ADR-0009](adr/0009-cut-open-solid-and-point-picking.md)) | TC-88, TC-89, TC-93, TC-94, TC-105 (manual) | Pass |
 | REQ-20 | UC-02 | `StudioApp.refreshViews`, `SliceView`, `FrameRenderer` | TC-95 (manual), TC-85 | Pass |
 | REQ-21 | UC-02 | `PlaneSpec` ([ADR-0008](adr/0008-plane-spec-and-software-renderer.md)), points editor of `StudioApp` | TC-80–TC-85, TC-90, TC-96, TC-98 (manual) | Pass |
-| REQ-22 | UC-05 | `StudioApp` list model, `PlaneCsvReader`, `PlaneCsvWriter` | TC-48, TC-99, TC-100, TC-101 (manual) | Pass |
-| REQ-23 | UC-05 | `PlaneSpec.lerp`, `StudioApp.expandedPlanes` | TC-84, TC-102 (manual) | Pass |
-| REQ-24 | UC-05 | `StudioApp.exportVideo`, `PlaneCsvWriter` (exact numbers, `quantize`) | TC-86, TC-48, TC-103 (manual + `cmp` of decoded frames) | Pass |
+| REQ-22 | UC-05 | `StudioApp` list model, `PlaneCsvReader` | TC-48, TC-99, TC-100, TC-101 (manual) | Pass |
+| REQ-23 | UC-05 | `Sweep`, `StudioApp.videoPass`, `togglePlay` / `stepPlayback` ([ADR-0011](adr/0011-the-video-is-what-play-shows.md)) | TC-107, TC-108, TC-102 (manual) | Pass |
+| REQ-24 | UC-05 | `StudioApp.exportVideo`, `videoFrames`, `csvRows`, `PlaneCsvWriter` (exact numbers, `quantize`) | TC-86, TC-109, TC-48, TC-103 (manual + `md5sum` against Ex0) | Pass |
 | REQ-25 | UC-02 | `VolumeGeometry`, `OrthoView` ([ADR-0009](adr/0009-cut-open-solid-and-point-picking.md)) | TC-29, TC-87, TC-96 (manual) | Pass |
 | REQ-26 | UC-02 | `StudioApp` picking, `CutawayRenderer.pick`, `OrthoView` clicks, `PlaneSpec.makeIsosceles` | TC-89, TC-90, TC-97, TC-98 (manual) | Pass |
 | REQ-27 | UC-05 | `StudioApp.findMatchingCsv` | TC-99 (manual) | Pass |

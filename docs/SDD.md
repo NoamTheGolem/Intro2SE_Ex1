@@ -1,8 +1,10 @@
 # Software Design Document (SDD)
 
-**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.1 (3.0 added the app; 3.1: the
+**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.2 (3.0 added the app; 3.1: the
 course's point order and row classes, the cut-open solid, Slicer's three views, point picking —
-§3, §4.1, §5.1, §6, §8, ADR-0003/0004 revised, ADR-0009)
+§3, §4.1, §5.1, §6, §8, ADR-0003/0004 revised, ADR-0009; 3.2: the video is what Play shows — the
+list or `Sweep` — played back and forth and exported in one click, nearest neighbour only in the
+app, ADR-0011)
 **Answers:** how is the system structured, and what did we reject?
 **Inputs:** [SRS](SRS.md) · **Details per component:** [ALGORITHM.md](ALGORITHM.md) (EDD of the projection) ·
 **Decisions:** [ADRs](adr/)
@@ -48,7 +50,7 @@ flowchart TB
     subgraph app["app  (desktop: java.io, AWT/Swing allowed)"]
       direction TB
       Ex0["ex1.app.Ex0<br/>demo main, options, exit codes<br/>(no arguments → StudioApp)"]
-      Studio["ex1.app.StudioApp<br/>the app: toolbar, views, points editor, plane editor,<br/>use-case list, picking, export"]
+      Studio["ex1.app.StudioApp<br/>the app: toolbar, views, points editor, standard planes,<br/>the video (list or Sweep), play, export"]
       V3["VolumeView3D<br/>3-D view: object cut open by the plane"]
       CR["CutawayRenderer · SolidModel<br/>ray caster · the scan as a solid"]
       RC["Raster · Camera3D<br/>colour + depth buffers, orbit camera"]
@@ -108,8 +110,9 @@ adapters" split from the course modules: `VideoWriter` is a port, the three writ
 | `VideoWriter` family | Frames → MP4 / PNG | Built-in encoder as the always-works path |
 | `FrameRenderer` | Plane *i* → grey frame *i*, common frame size; null → black | Shared by CLI and GUI, so both produce identical frames |
 | `Ex0` | Argument parsing, exit codes, orchestration | Pipeline reads top-down |
-| `StudioApp` | The app: toolbar, the four views, points editor (3/4 points, pick, Apply, Make isosceles), plane editor (presets, sliders), use-case list, playback, export; owns the current plane and tells every view | Swing only; projection on every change (≈ 1–10 ms); model build and export on `SwingWorker`s |
-| `PlaneSpec` | The *movable* form of a plane: centre, yaw/pitch/roll, width, height, top ratio; `toPlane`, `fromPlane`, `lerp`, presets, `makeIsosceles` | Every spec is a valid plane by construction; interpolation in this space ([ADR-0008](adr/0008-plane-spec-and-software-renderer.md)) |
+| `StudioApp` | The app: toolbar (with the projection FPS), the four views, points editor (3/4 points, pick; *Make isosceles* only while doubtful), standard planes + folded sliders, the video (list or sweep): Play back and forth, Export; owns the current plane and tells every view | Swing only; nearest-neighbour projection on every change (≈ 0.3–3 ms); model build and export on `SwingWorker`s; the video is what Play shows ([ADR-0011](adr/0011-the-video-is-what-play-shows.md)) |
+| `Sweep` | The default video: the current plane moved along its unit normal in whole-voxel steps (≈ 150 frames) across the volume's box, and where the current plane is in it | Pure geometry, no Swing → unit-tested (TC-107, TC-108) |
+| `PlaneSpec` | The *movable* form of a plane: centre, yaw/pitch/roll, width, height, top ratio; `toPlane`, `fromPlane`, `lerp`, presets, `makeIsosceles` | Every spec is a valid plane by construction, so the sliders can never make a bad plane ([ADR-0008](adr/0008-plane-spec-and-software-renderer.md)) |
 | `VolumeGeometry` | Index ⇄ world millimetres from `space directions`; which index axis is Axial/Coronal/Sagittal, their direction on screen, labels; `slicePlane(view, k)` | The display follows the patient's axes; the CSV stays in indices ([ADR-0009](adr/0009-cut-open-solid-and-point-picking.md)) |
 | `SolidModel` | The scan as a solid: windowed grey ≤ 256³, smoothed, Otsu threshold (adjustable), specks removed, outside air flood-filled through a closing, 8³ occupancy blocks | Dark insides stay part of the object, so the cut face shows them |
 | `CutawayRenderer` | One ray per pixel: removes the half on the viewer's side of the plane, shows the scan's grey on the cut face, shades the surface; `pick(px, py)` returns the clicked point | Index-space rays, empty-block skipping, thread pool, writes the shared depth buffer |
@@ -192,11 +195,24 @@ classDiagram
       -startPicking(only)
       -pointPicked(p)
       -refreshViews()
-      -expandedPlanes() List~Plane~
+      -videoPass() Sweep_Pass
+      -togglePlay()
+      -stepPlayback()
       -exportVideo()
+      ~videoFrames(source)$ List~Plane~
+      ~csvRows(frames)$ List~Plane~
       +modelClicked(index)
       +orthoClicked(view, index)
       +slidePlane(distance)
+    }
+    class Sweep {
+      +TARGET_FRAMES = 150$
+      +through(plane, sx, sy, sz)$ Sweep_Pass
+      +shifted(plane, d)$ Plane
+    }
+    class Sweep_Pass {
+      +planes List~Plane~
+      +current int
     }
     class PlaneSpec {
       +cx, cy, cz, yaw, pitch, roll
@@ -260,6 +276,8 @@ classDiagram
       +row(plane)$ String
     }
     StudioApp --> PlaneSpec
+    StudioApp ..> Sweep : the default video
+    Sweep ..> Sweep_Pass
     StudioApp --> VolumeView3D
     StudioApp --> OrthoView : 3
     StudioApp --> SliceView
@@ -319,7 +337,7 @@ sequenceDiagram
     E-->>G: "Wrote out.mp4", exit 0
 ```
 
-### 5.1 Key flow: UC-02 / UC-05 — pick 3 points, look inside, export (sequence)
+### 5.1 Key flow: UC-02 / UC-05 — pick 3 points, look inside, play, export (sequence)
 
 ```mermaid
 sequenceDiagram
@@ -345,15 +363,20 @@ sequenceDiagram
     P-->>S: Image2D → grey (the cut)
     S->>V3: setPlane + lookAtPlane (cut open, inside on the cut face)
     S->>O: setPlane (intersection lines, points)
-    U->>S: Add current … / Load its use case … / Export video…
-    S->>S: expandedPlanes(): keyframes + lerp
-    S->>R: new FrameRenderer(volume, planes, window, projector(all cores))
+    U->>S: Play
+    S->>S: videoPass(): the list, or Sweep.through(current plane)
+    loop every 100 ms until Stop: index += step, step = −step at either end
+        S->>P: project(frame) → all views
+    end
+    U->>S: Export video… (Enter)
+    S->>S: videoPass() → videoFrames(): CSV precision, bad plane → null
+    S->>R: new FrameRenderer(volume, planes, window, nearest, all cores)
     loop frame i (background)
         S->>R: render(i)
         S->>W: writeFrame
     end
-    S->>W: PlaneCsvWriter.write(planes, name.csv)  (exact numbers)
-    S-->>U: "Exported name.mp4 (+ name.csv). Open now?"
+    S->>W: PlaneCsvWriter.write(csvRows(planes), name.csv)  (unless the planes are a loaded CSV)
+    S-->>U: "Saved n frames … Open the video now?"
 ```
 
 ## 6. Data
@@ -362,7 +385,8 @@ sequenceDiagram
 |------|----------------|-----|
 | Volume | flat typed array, `index = x + sx·(y + sy·z)` | NRRD on-disk order: no reshuffle on load; x-fastest matches the inner loop |
 | Plane | four `Vec3` (doubles), voxel indices | fractional coordinates allowed by the CSV |
-| Plane, while moving | `PlaneSpec` (9 doubles) | always valid; the only form the sliders and the interpolation touch |
+| Plane, while moving | `PlaneSpec` (9 doubles) | always valid; the only form the sliders touch |
+| The video | `List<Plane>` (null = black frame) + start index (`Sweep.Pass`) | one list for Play and Export, so the exported file is exactly what was played (one pass) |
 | Picked points | `Vec3` voxel indices | the same space as the CSV; the views convert with `VolumeGeometry` |
 | Solid model | `byte[]` smoothed grey + `byte[]` state per model voxel (≤ 256³ each), `boolean[]` per 8³ block | a ray needs "solid here?" and a gradient; blocks let it skip air |
 | 3-D frame | `Raster`: `int[]` ARGB + `float[]` depth | the ray caster and the line drawing share one depth buffer |

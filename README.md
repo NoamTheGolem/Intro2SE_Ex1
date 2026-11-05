@@ -36,7 +36,7 @@ a detailed design is needed"; the design is the point of this repository.
 |----------|--------------|
 | **The app**: open a scan (menu, drag-and-drop, samples); the object as a solid **cut open by the plane**; **Axial / Coronal / Sagittal** views; **pick the 3 (or 4) points** on them or on the object; move/turn the plane with presets, sliders and the mouse wheel; the cut live | CSV points in millimetres — points are voxel indices, as in every course file (the app's display does use millimetres) |
 | **Use cases**: a list of planes (picked, typed, or the lecturer's CSV — found automatically for his scans), smooth interpolation, play, **export as MP4 + CSV** | Colour / vector / 4-D volumes |
-| The projection algorithm of the sheet (triangle + trapezoid), nearest-neighbour and trilinear sampling, optional multithreading | GPU |
+| The projection algorithm of the sheet (triangle + trapezoid), nearest-neighbour sampling (the sheet's `M[p]`; trilinear as a command-line option), optional multithreading | GPU |
 | The course's CSV format and rules: valid / doubtful (drawn + warned) / bad (black + warned) rows, exactly as the lecturer's `edge_cases.csv` expects | Networking, servers |
 | NRRD input: 3-D scalar, 8/16/32-bit signed/unsigned and float, raw/gzip, detached header, space directions | Android app (planned reuse of `core`) |
 | Command-line demo (item 7), benchmark, dataset, tests, experiment; MP4 output with no external software | |
@@ -59,9 +59,9 @@ The assignment's command works the same way, with the bundled Java:
 `python Ex0.py` with no arguments opens the app, with three arguments runs the demo.
 
 Then open a scan: **Open NRRD…**, drop a `.nrrd` on the window, or **Samples** (MRHead + the
-course's `Ex0.csv`; the die + the lecturer's edge cases; a 500³ phantom). The lecturer's five test
-scans are in his Drive folder (see [data/README.md](data/README.md)); their use cases ship in
-`data/course/`.
+course's `Ex0.csv`; the die + the lecturer's edge cases; in the app download also the lecturer's
+scans, each with its use case; a 500³ phantom when present). The lecturer's five test scans are in
+his Drive folder (see [data/README.md](data/README.md)); their use cases ship in `data/course/`.
 
 ### Choose a cut and look inside — 4 clicks
 
@@ -73,17 +73,26 @@ scans are in his Drive folder (see [data/README.md](data/README.md)); their use 
    the object open there and turns the camera to the cut. Drag to look from another side; turn the
    mouse wheel to slide the cut through the object.
 
+### Make the video — 2 clicks
+
+1. **Play** runs the video in the views, back and forth, at 10 frames per second. With no use case
+   loaded the video is the current plane swept through the whole scan; **Load its use case** (or
+   **Samples**, which opens a scan with its CSV) makes it the lecturer's planes instead.
+2. **Export video…** saves the same video once, first frame to last, as an MP4 at 10 fps — nothing
+   to collect by hand first. A sweep (or a list made by hand) also gets its planes saved next to
+   it as a CSV; `python Ex0.py scan.nrrd that.csv out.mp4` then makes the **identical** file.
+
 ### Using the app
 
 | Where | What |
 |-------|------|
-| Toolbar | **Open NRRD…**, **Samples**, **Load use case (CSV)…**, **Save CSV…**, **Export video…**; **Sampling** nearest/trilinear; **Cut open** on/off; **Surface** = the threshold that defines the object's skin (automatic by default) |
+| Toolbar | **Open NRRD…**, **Samples**; **Cut open** on/off; **Surface** = the threshold that defines the object's skin (automatic by default); on the right, **Projection: N FPS** — how many cuts per second the algorithm computes for the current plane (nearest neighbour, one thread, median of the last 15) |
 | **3-D model — cut open by the plane** (top left) | The scan as a solid: the half between you and the plane is removed, so the cut face shows the inside (inside the triangle at full brightness, the rest of the plane darker); the outside is shaded. Box, plane outline and points on top. Drag = orbit, wheel = move the plane through the object, Ctrl+wheel = zoom, double-click = reset; while picking, a click places the point on the surface or on the cut face. |
-| **The cut** (top right) | The projection of the plane — exactly one frame of the video ([ALGORITHM.md](docs/ALGORITHM.md)), with `a`/`a1 a2`, `b`, `c` at its corners; size, validity and projection time below. |
+| **The cut** (top right) | The projection of the plane — exactly one frame of the video ([ALGORITHM.md](docs/ALGORITHM.md)), with `a`/`a1 a2`, `b`, `c` at its corners; its size below (and "frame i of n" while playing). |
 | **Axial / Coronal / Sagittal** (bottom) | Slicer's three views with A/P, R/L, S/I labels and a slider each; the orange line is where the plane crosses that slice, the dots are its points (filled when near the slice). Click to place a point while picking. |
-| **1. The plane — its points** | 3 points (triangle) or 4 (trapezoid); type them, **pick** one, **Pick a, b, c** (all), **Apply**, **Make isosceles**. The line below says *valid*, *doubtful (drawn as given)* or *bad (a black frame)* and why. |
-| **2. Move / turn the plane** | Presets **Axial / Coronal / Sagittal** (the current slice of that view, camera facing it), **Triangle**, **Oblique**, `< back` `fwd >`; sliders for centre, yaw / pitch / roll, width, height and top/base (0 % = triangle, 100 % = rectangle) — every position is a valid plane. The **CSV row** of the plane is shown live, in the course order. |
-| **3. Use case — the frames of the video** | **Load its use case: NAME.csv** (appears when the lecturer's CSV for this scan is found); the list of planes; **Add current / Replace / Remove / Up / Down / Clear**; **Frames between** for a smooth video; **fps**; **Play**; **Export video (MP4 + CSV)…** — `Ex0.py scan.nrrd that.csv x.mp4` reproduces the exported video **byte for byte**. |
+| **1. The plane — its points** | 3 points (triangle) or 4 (trapezoid); type them (Enter applies), **pick** one, or **Pick a, b, c** (all). Only problems are written below: a plane that is not isosceles is drawn as given and gets a **Make isosceles** button; a bad plane is a black frame, with the reason. |
+| **2. Or start from a standard plane** | **Axial / Coronal / Sagittal**: the current slice of that view, camera facing it. **Fine-tune with sliders** unfolds centre, yaw / pitch / roll, width, height and top/base (0 % = triangle, 100 % = rectangle) — every position is a valid plane. |
+| **3. The video** | **Load its use case: NAME.csv** (when the lecturer's CSV for this scan is found), **Load use case (CSV)…**, **Add current plane**; the list of planes (shown when not empty) with **Remove** and **Clear (back to the sweep)**; one line saying what the video is and how long; **Play** / **Stop** and **Export video…**. |
 
 ![The lecturer's scans cut open: head, onion, swiss roll, croissant × (picked triangle, Axial,
 Coronal, Sagittal)](docs/img/cut_open_gallery.png)
@@ -150,7 +159,7 @@ croissant. Use `java -Xmx… -jar build/Ex0.jar` for 16/32-bit volumes of 1000³
 ## Tests
 
 ```bash
-scripts/test.sh          # Linux / macOS — build with -Xlint:all -Werror, then 90 JUnit tests
+scripts/test.sh          # Linux / macOS — build with -Xlint:all -Werror, then 94 JUnit tests
 scripts\test.bat         # Windows
 ./gradlew test           # Gradle (downloads Gradle once; JUnit itself is vendored in lib/)
 ```

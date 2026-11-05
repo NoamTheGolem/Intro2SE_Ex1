@@ -1,8 +1,9 @@
 # Testing Strategy — Test Plan (STP) and Test Descriptions (STD)
 
-**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.1 (3.0 added the app; 3.1 adds
+**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.2 (3.0 added the app; 3.1 adds
 the lecturer's data as acceptance tests — B.2, B.4 `EdgeCasesTest`, B.5 — the cut-open 3-D view
-and point picking — B.10 — and a new manual script, B.11)
+and point picking — B.10 — and a new manual script, B.11; 3.2 tests the video = what Play shows:
+`SweepTest`, TC-107…TC-109, and the simpler screen in B.11)
 **Verifies:** every REQ/NFR of the [SRS](SRS.md) (traceability in SRS §5) · **Design under test:** [SDD](SDD.md), [EDD](ALGORITHM.md)
 
 ---
@@ -78,7 +79,7 @@ scripts\test.bat           # Windows
 ./gradlew test             # or Gradle (downloads Gradle once; tests still offline)
 java -cp build/Ex0.jar ex1.app.Benchmark 500
 ```
-Result at submission: **90 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present). On the
+Result at submission: **94 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present). On the
 CI Windows runner the demo step goes through `python Ex0.py`, which uses the bundled `runtime/`.
 
 ---
@@ -187,7 +188,7 @@ die has three values, and frames 1–3 must show its pips.)
 | TC-71 | `fileHasFtypMdatMoov` | REQ-14 | boxes present, `mdat` before `moov`, `avcC` present |
 | TC-72 | `ffmpegDecodesEveryPixel` | REQ-14 | 4 frames 34×18 (one all-black) → ffmpeg decodes 4 frames, every pixel within ±1 |
 
-### B.9 The app's plane model and export — `PlaneSpecTest`, `ExportRoundTripTest` (app)
+### B.9 The app's plane model, video and export — `PlaneSpecTest`, `SweepTest`, `ExportRoundTripTest` (app)
 
 | TC | Test | Verifies | Input → expected |
 |----|------|----------|------------------|
@@ -195,9 +196,12 @@ die has three values, and frames 1–3 must show its pips.)
 | TC-81 | `anySpecIsAValidPlane` | REQ-21, REQ-06 | four arbitrary specs (angles up to ±180/±90, width 2, top ratio 0…1) → `validate` empty, triangle iff top ratio 0 |
 | TC-82 | `fromPlaneRecoversTheSpec` | REQ-21, REQ-22 | spec → `toPlane` → `fromPlane` → every field within 1e-6 (a loaded CSV row edits as the same angles) |
 | TC-83 | `fromPlaneHandlesTheCourseRows` | REQ-22 | Ex0 row 1 → triangle 400×400; Ex0 row 4 → top ratio 0.75 |
-| TC-84 | `interpolationStaysValidAndEndsAtTheKeyframes` | REQ-23 | 11 steps between two specs → all valid; yaw 170 → −170 passes through ±180 (short arc); ends equal the keyframes |
+| TC-84 | `interpolationStaysValidAndEndsAtTheKeyframes` | ADR-0008 (the planes of TC-86) | 11 steps between two specs → all valid; yaw 170 → −170 passes through ±180 (short arc); ends equal the keyframes |
 | TC-85 | `slideMovesAlongTheNormalOnly` | REQ-21 | axis preset slid by 3 → only its constant coordinate changes, by 3 |
 | TC-86 | `appFramesEqualCommandLineFramesOfTheSavedCsv` | REQ-24, NFR-05 | 13 interpolated oblique planes on a 64³ phantom → CSV → read back with no warning → `FrameRenderer` frames **`assertArrayEquals`** with the app's frames, every frame |
+| TC-107 | `axisPlaneVisitsEverySliceOnceAndContainsTheCurrentPlane` | REQ-23 | the plane `y = 7` in a 10×20×30 volume → the sweep has 20 frames, one voxel apart, in order; the current plane is one of them; every frame valid |
+| TC-108 | `bigVolumesUseLargerStepsAndATriangleStaysATriangle`, `planeWithoutANormalIsTheWholeVideo` | REQ-23 | an oblique triangle in 500³ → between 75 and 300 frames (not thousands), all triangles, the current plane among them; collinear points → a video of that one plane |
+| TC-109 | `defaultSweepVideoWithABlackFrameEqualsCommandLineFramesOfItsCsv` | REQ-24, REQ-07 | the default video (an oblique triangle swept through a 48³ phantom) with a row `a = b = c` in the middle → `csvRows` → CSV → read back: as many rows as frames, the same row black → `FrameRenderer` frames **identical** to the app's, every frame |
 
 ### B.10 The 3-D view and picking — `CutawayTest` (app)
 
@@ -219,15 +223,15 @@ Data: the lecturer's scans from his Drive folder (`MRHead_1`, `onion`, `swiss_ro
 | TC-92 | drop `MRHead_1.nrrd` on the window (or Open NRRD…) | status "MRHead_1.nrrd 256x256x130 INT16, voxel 1.00 x 1.00 x 1.30 mm"; Axial/Coronal/Sagittal with A/P/R/L/S/I labels; a default triangle and its cut; about a second later the head in 3-D, cut open by the triangle, brain visible on the cut face; button "Load its use case: head.csv" |
 | TC-93 | drag in the 3-D view; Ctrl+wheel; wheel; double-click | the object orbits (coarse while dragging, sharp a moment later); zooms; the plane slides through the head and the cut face changes; the camera resets |
 | TC-94 | untick **Cut open**; move **Surface** | the whole head; the skin threshold changes (lower = more of the noise, higher = skin thins out) |
-| TC-95 | move every slider; watch the status line | all views update; "valid"; projection time ≈ 1–10 ms |
-| TC-96 | presets Axial / Coronal / Sagittal / Triangle / Oblique; Top/base 0 % and 100 % | the plane lies on the current slice of that view (as in the slice view), the camera faces it, the cut equals that slice; triangle ↔ rectangle; CSV row has 3 or 4 points in the course order |
-| TC-97 | **Pick a, b, c**, then click three spots on the slice views (moving their sliders between clicks) | the prompt names the next point; after the third click: "Made isosceles for the algorithm: c moved along a->c …"; the head cut open there, camera facing the cut |
-| TC-98 | pick on the 3-D object (surface, then cut face); a single point's **pick**; type coordinates + **Apply**; **Make isosceles**; three points on one line | the point lands where clicked; only that point changes; typed values used; doubtful plane fixed; collinear points → black cut and "points a, b, c are collinear (no plane)" next to the points |
-| TC-99 | **Load its use case: head.csv** | 280 lines, no warning; clicking a line shows that plane on the head and its cut; Play runs through them |
-| TC-100 | Samples → Dice + the lecturer's edge cases; select each row | a dialog listing the warnings of rows 7–16; 16 lines; rows 1–3 show faces with 1, 6 and 4 pips; row 6 a plane above the die with a black cut; rows 7–8 drawn with "doubtful" next to the points; rows 9–16 a black frame captioned with the reason, the die shown whole |
-| TC-101 | Add current / Replace / Remove / Up / Down / Clear; Save CSV… | list follows; the saved file reopens with no new warning |
-| TC-102 | Frames between = 5, Play | the plane glides between the entries; Stop stops |
-| TC-103 | Export video… → default name; then `Ex0 <scan> <name>.csv x.mp4` | progress bar, MP4 + CSV written, "open now?" plays; the demo prints the same frame count and size; decoded frames identical (`ffmpeg -f rawvideo` + `cmp`) |
+| TC-95 | the toolbar's **Projection: N FPS**; open **Fine-tune with sliders**, move every slider | the speed of the current cut (≈ 1000–4000 FPS on a laptop for MRHead) and steady to within a few hundred while nothing changes; all views update; **Hide the sliders** folds them away |
+| TC-96 | presets Axial / Coronal / Sagittal; Top/base 0 % and 100 % (sliders) | the plane lies on the current slice of that view (as in the slice view), the camera faces it, the cut equals that slice; triangle ↔ rectangle |
+| TC-97 | **Pick a, b, c**, then click three spots on the slice views (moving their sliders between clicks) | the prompt names the next point; after the third click: "Clicks are never exact, so c was moved a little along the line a-c to make the triangle isosceles." — no numbers; the head cut open there, camera facing the cut |
+| TC-98 | pick on the 3-D object (surface, then cut face); a single point's **pick**; type coordinates + Enter; make a plane not isosceles; three points on one line | the point lands where clicked; only that point changes; typed values used; "Not isosceles (drawn as given): …" with a **Make isosceles** button, which fixes it and disappears; collinear points → black cut and "points a, b, c are collinear (no plane)" next to the points |
+| TC-99 | **Load its use case: head.csv** | 280 lines, no warning; the list appears; clicking a line shows that plane on the head and its cut; the video line says "the 280 planes of head.csv: 280 frames, 28 s at 10 fps" |
+| TC-100 | Samples → Dice + the lecturer's edge cases; select each row | a dialog listing the warnings of rows 7–16; 16 lines; rows 1–3 show faces with 1, 6 and 4 pips; row 6 a plane above the die with a black cut; rows 7–8 drawn with "(!) doubtful" in the list and "Not isosceles" next to the points; rows 9–16 a black frame captioned with the reason, the die shown whole |
+| TC-101 | **Add current plane** twice; **Remove**; **Clear (back to the sweep)** | the list appears with "plane 1", "plane 2"; follows; after Clear the list is hidden and the video line says "the current plane swept through the scan" |
+| TC-102 | **Play** with no list (MRHead), then with `edge_cases.csv` (dice) | the sweep starts at the current plane, runs to one end, turns and runs back, and so on; "frame i of n" under the cut; with the list the selected row follows the video and rows 6, 9–16 show black with their reason; **Stop** keeps that frame |
+| TC-103 | **Export video…** → Enter on the proposed name; then `Ex0 <scan> <its CSV> x.mp4` and `md5sum` both | sweep: `MRHead_sweep.mp4` + `MRHead_sweep.csv`; edge cases: `dice_edge_cases.mp4` only ("its frames are the rows of edge_cases.csv"); progress bar, "open now?"; `ffprobe`: 10 fps, one frame per row / sweep step; **the two MP4s have the same MD5** (5 Nov: MRHead sweep 169 frames, dice 16 frames — both equal) |
 | TC-104 | drop a `.txt` file; Open NRRD… on a non-NRRD | friendly dialog, app keeps running |
 | TC-105 | repeat TC-92, TC-97 and TC-99 with `onion`, `swiss_roll`, `biscuit_cake`, `croissant` | each object appears cut open with the default surface; its use case loads without warning; the croissant (500³) model is ready within ~3 s |
 | TC-106 | **download and run** (NFR-11): on a Windows PC *without Java*, download the repository ZIP, unzip, double-click `Ex1.exe`; drop `MRHead_1.nrrd` on `Ex1.exe`; run `python Ex0.py data\dice.nrrd data\course\edge_cases.csv x.mp4` | the app opens (no console window, no question about Java); the dropped scan opens; the demo writes 16 frames. *Smoke test without such a PC (4 Nov): the bundled runtime under Wine prints `openjdk version "25.0.1"`, writes the edge-case MP4 **byte for byte equal** to the Linux JDK's, and `Ex1.exe <scan>` opens the app with the head cut open* |

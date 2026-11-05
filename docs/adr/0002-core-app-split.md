@@ -14,6 +14,6 @@ main, generators, benchmark and the Swing app (`StudioApp`). `app` depends on `c
 (ports and adapters: `VideoWriter` is the port, three writers are adapters).
 
 ## Consequences
-+ 45 of the 90 tests run on `core` alone with in-memory volumes.
++ 45 of the 94 tests run on `core` alone with in-memory volumes.
 + Android: only new adapters are needed (`MediaCodec` writer, content-URI NRRD source).
 − Slightly more ceremony (two source trees, `FrameRenderer` as the shared glue in `app`).

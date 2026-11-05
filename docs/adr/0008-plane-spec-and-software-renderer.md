@@ -1,7 +1,10 @@
 # ADR-0008: Edit planes as centre + angles + size; draw the 3-D view with a software renderer
 
 **Status:** Accepted · **Date:** 2026-11-03 · part 2 (what the model view shows) is superseded by
-[ADR-0009](0009-cut-open-solid-and-point-picking.md); part 3 revised the same day
+[ADR-0009](0009-cut-open-solid-and-point-picking.md); part 3 revised the same day; since
+[ADR-0011](0011-the-video-is-what-play-shows.md) (v3.2) the app no longer offers interpolated
+frames between list entries — `lerp` stays as tested code — and the CSV leaves the app only with
+an export
 
 ## Context
 The exercise is an *application*: load a model, cut it with a plane the user positions, see the
@@ -28,7 +31,7 @@ answer:
    depth, lines and triangles; `Camera3D`: orthographic orbit camera), blitted once into a
    `BufferedImage`. *v3.0 drew the volume as three textured mid-slices plus the plane textured
    with its cut; v3.1 replaces that by the cut-open solid of ADR-0009, on the same buffers.*
-3. Planes that leave the app (Save CSV, Export) are written with **exact numbers** — the
+3. Planes that leave the app (v3.0: Save CSV and Export; since v3.2: the CSV written with an export) are written with **exact numbers** — the
    shortest decimal that reads back to the same `double`
    (`new BigDecimal(Double.toString(v)).toPlainString()`). The saved CSV therefore reads back to
    bit-identical planes, and the exported video equals the demo's rendering of that CSV byte for

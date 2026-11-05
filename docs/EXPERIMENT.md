@@ -175,18 +175,19 @@ that view's current slice and turns the camera to face it):
 
 ![The lecturer's scans cut open](img/cut_open_gallery.png)
 
-The whole window — the head with the Axial preset: 3-D view (top left), the cut = the video
-frame (top right), Axial/Coronal/Sagittal with the plane's line and points (bottom), points
-editor, presets and sliders, and the use-case list with the button that loads `head.csv`:
+The whole window (v3.2, ADR-0011) — the head with the Axial preset: 3-D view (top left), the cut
+= the video frame (top right), Axial/Coronal/Sagittal with the plane's line and points (bottom),
+and one column of three short panels: the points, the standard planes (sliders folded away), the
+video with the button that loads `head.csv`; the projection speed top right:
 
 ![The app with MRHead_1 and the Axial preset](img/app_head_axial.png)
 
 **Choosing a cut by 3 points** (Robot script on a virtual display, the steps of TESTING B.11):
-*Pick a, b, c* → `a` clicked on the top of the head in the Sagittal view, `b` and `c` at the back
-of the head in the Axial view → the app reports "Made isosceles for the algorithm: c moved along
-a->c, |ac| 131.4 -> 131.1 = |ab|", cuts the head there and turns the camera to the cut: the
-brain shows on the cut face, brightest inside the triangle; the 85×132 cut is projected in
-0.3 ms:
+*Pick a, b, c* → `a` clicked on the top of the head, `b` at the front of the jaw and `c` at the
+back of the neck, all in the Sagittal view → the app says "Clicks are never exact, so c was moved
+a little along the line a-c to make the triangle isosceles", cuts the head there and turns the
+camera to the cut: the brain and the brain stem show on the cut face; the 163×189 cut is
+projected at about 2100 FPS (toolbar):
 
 ![Three picked points cut the head open](img/app_head_picked.png)
 
@@ -207,15 +208,26 @@ views the four corners share labels where they coincide ("a1, b", "a2, c"):
 
 So the 3-D view redraws at 140–250 FPS at half resolution while the user drags, and sharpens to
 38–70 FPS full frames (NFR-10: ≥ 10 FPS while moving, sharp within 0.5 s — met with a wide
-margin). The first frame after loading is slower (75–150 ms in the app's status line) because the
-JIT has not compiled the ray loop yet. The 2-D cut costs 1–10 ms as before.
+margin). The first frame after loading is slower (75–150 ms, shown by v3.1's 3-D view, which printed its
+frame time) because the JIT has not compiled the ray loop yet. The 2-D cut costs 1–10 ms as before.
 
 **The lecturer's use cases in the app.** Opening `MRHead_1.nrrd` enables *Load its use case:
 head.csv* (found in `data/course/`); one click loads the 280 planes without a warning, *Play*
-runs through them on the cut-open head, and *Export video…* writes the MP4 and the CSV.
-`Ex0 MRHead_1.nrrd <exported>.csv x.mp4` reproduces it byte for byte (decoded frames compared
-with `cmp`). An earlier export differed from the lecturer's rows in one frame because the
-writer rounded to 6 decimals; the writer now prints exact numbers (ADR-0008, TC-48).
+runs through them on the cut-open head, back and forth, and *Export video…* writes the MP4.
+`Ex0 MRHead_1.nrrd head.csv x.mp4` reproduces it byte for byte. An earlier export differed from
+the lecturer's rows in one frame because the writer rounded to 6 decimals; the writer now prints
+exact numbers (ADR-0008, TC-48).
+
+**The video without a use case (v3.2).** With no list the video is the current plane swept
+through the scan (ADR-0011). On MRHead the default triangle gives 169 frames, 17 s at 10 fps;
+*Play* starts at the current plane and turns at both ends ("frame 99 of 169" under the cut);
+*Export video…* → Enter wrote `MRHead_sweep.mp4` (206×230, 10 fps, 169 frames by `ffprobe`) and
+`MRHead_sweep.csv`, and `Ex0 MRHead.nrrd MRHead_sweep.csv x.mp4` wrote a file with the **same
+MD5**; the die with `edge_cases.csv` likewise (16 frames, rows 6 and 9–16 black, same MD5). The
+same export under Wine with the bundled Windows runtime (no ffmpeg there, so the built-in
+writer): 169 frames, 12.7 MB.
+
+![Playing the sweep: frame 99 of 169](img/app_playing.png)
 
 ## 9. Other observations
 
