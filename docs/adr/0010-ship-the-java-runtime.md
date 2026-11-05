@@ -46,5 +46,16 @@ course's own prototype is Python; a grader's PC may well have no Java at all.
 − +47 MB in the repository and in its history; a Java update means a new `runtime/` commit.
 − Windows only. Linux/macOS still need any Java 17+ (`./Ex0`, `python Ex0.py`).
 − `Ex1.exe` is not code-signed: on a file downloaded from the internet, SmartScreen may ask once
-  ("More info → Run anyway").
+  ("More info → Run anyway"), and Windows 11's **Smart App Control** blocks it with no override.
+
+**Update (5 Nov 2026).** On the team's PC Windows refused to start the app ("unsigned"). Two
+findings: (1) `Ex1.exe` is unsigned — unavoidable without a paid certificate; (2) our
+`runtime/bin/java.exe` and `javaw.exe` had *lost* Oracle's signature: jlink's `--strip-debug`, run
+on a Linux host, also runs `objcopy` on the Windows executables, which drops the Authenticode
+signature (the PE header still pointed at it — a broken signature). `make_runtime.sh` now uses
+`--strip-java-debug-attributes`; the three launchers are byte-identical to Oracle's signed originals
+in the jmods (all 71 `.exe`/`.dll` files of `runtime/` carry a complete signature). So there is a
+fully signed way in: unblock the zip (removes the Mark of the Web, so SmartScreen and Smart App
+Control's file-type block do not apply), then `Ex1 Viewer.bat` → `cmd.exe` (Microsoft) →
+`javaw.exe` (Oracle). README and `README.txt` of the download say so in four steps.
 − A committed build artefact can fall behind the sources; the definition of done covers it.

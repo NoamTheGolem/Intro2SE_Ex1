@@ -12,6 +12,9 @@ cd "$(dirname "$0")/.."
 : "${JMODS:?set JMODS to the jmods folder of a Windows x64 JDK}"
 JLINK="${JLINK:-jlink}"
 rm -rf runtime
+# --strip-java-debug-attributes, not --strip-debug: on a Linux host --strip-debug also runs objcopy
+# on the Windows executables, which drops Oracle's signature from java.exe and javaw.exe - and
+# Windows (Smart App Control) refuses to start an unsigned program from the internet.
 "$JLINK" --module-path "$JMODS" --add-modules java.base,java.desktop \
-    --strip-debug --no-header-files --no-man-pages --compress=zip-6 --output runtime
+    --strip-java-debug-attributes --no-header-files --no-man-pages --compress=zip-6 --output runtime
 echo "runtime/: $(du -sh runtime | cut -f1), $(grep JAVA_VERSION runtime/release)"

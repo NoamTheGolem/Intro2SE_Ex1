@@ -51,8 +51,14 @@ a detailed design is needed"; the design is the point of this repository.
 double-click **`Ex1.exe`**. That's all: the app brings its own Java (`runtime/`, a 47 MB OpenJDK 25
 runtime made by `jlink`) and its compiled code (`build/Ex0.jar`), so there is no Java to install,
 nothing to build and no ffmpeg — the MP4 encoder is built in. Dropping a `.nrrd` file on `Ex1.exe`
-opens it. *(Windows may show "Windows protected your PC" for a program downloaded from the
-internet: More info → Run anyway. The exe is not code-signed.)*
+opens it.
+
+**If Windows blocks `Ex1.exe`** (a warning about an unknown or unsigned publisher): `Ex1.exe` is our
+own 60-line launcher and has no paid code-signing certificate; the Java runtime inside is signed
+by Oracle. Once: right-click the downloaded `.zip` → **Properties** → tick **Unblock** → OK, extract
+it again, then double-click `Ex1.exe`. If **Smart App Control** still blocks it, double-click
+**`Ex1 Viewer.bat`** — the same app, started with the signed `javaw.exe`. (On "Windows protected
+your PC", *More info → Run anyway* works too.)
 
 The assignment's command works the same way, with the bundled Java:
 `python Ex0.py file.nrrd file.csv file.mp4` (or `Ex0.bat …`).

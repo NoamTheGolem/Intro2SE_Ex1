@@ -437,7 +437,7 @@ sequenceDiagram
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Grader's machine has no Java | demo does not run | Windows: Java ships with the app (`runtime/`, ADR-0010); other OSes: the launcher prints a clear message with the download link; CI proves it on clean Windows/Linux images |
-| `Ex1.exe` is not code-signed | SmartScreen may ask once on a downloaded copy | README says what to click; `Ex1 Viewer.bat` and `python Ex0.py` are alternatives |
+| `Ex1.exe` is not code-signed | SmartScreen asks on a downloaded copy; Smart App Control blocks it | the runtime keeps Oracle's signatures (ADR-0010 update); README: unblock the zip, else `Ex1 Viewer.bat` (signed `javaw.exe`); `python Ex0.py` are alternatives |
 | Built-in MP4 files are large (~1.5 B/pixel/frame) | a 500-frame 500² video ≈ 190 MB | ffmpeg path used automatically when present; `--fps`/frame count under user control; documented |
 | The surface threshold does not suit a scan | holes in the skin or a "fog" of noise in the 3-D view | Otsu (works on all five lecturer scans), speck removal; the cut itself never depends on it (the Surface slider was removed on request, ADR-0012) |
 | The PC has an ffmpeg that cannot encode H.264, or a player holds the file | export fails | probe for `libx264`, fallback to the built-in writer, free default name, replace check, plain-words messages (ADR-0012) |
