@@ -175,10 +175,10 @@ buttons for these; since v3.3 the plane comes from its points only, ADR-0012):
 
 ![The lecturer's scans cut open](img/cut_open_gallery.png)
 
-The whole window (v3.3, ADR-0012) — the head after three picked points, the picture panel turned to
-**Axial** (picture 2 of 4): the 3-D view (left), the axial slice with the plane's line (middle; its
-arrows flip to Coronal, Sagittal and back to the cut), the points and the video (right), the
-projection speed top right:
+The whole window (v3.4, ADR-0014: the app's own dark look) — the head after three picked points,
+the picture panel turned to **Axial** (picture 2 of 4): the 3-D view (left), the axial slice with
+the plane's line (middle; its arrows flip to Coronal, Sagittal and back to the cut), the points and
+the video (right); top right the FPS, which says *Play to measure FPS* until the video plays:
 
 ![The app with MRHead_1, the picture panel on Axial](img/app_head_axial.png)
 
@@ -187,7 +187,7 @@ projection speed top right:
 top of the head, `b` at the jaw and `c` at the back of the neck → the app says "Clicks are never
 exact, so c was moved a little along the line a-c to make the triangle isosceles", cuts the head
 there and turns the camera to the cut: the brain and the brain stem show on the cut face, and on
-the cut (picture 1) as the video frame, projected at about 1800 FPS (toolbar):
+the cut (picture 1) as the video frame:
 
 ![Three picked points cut the head open](img/app_head_picked.png)
 
@@ -216,11 +216,12 @@ head.csv x.mp4` gives his 280 frames (v3.2 also loaded them in the app and its e
 `Ex0` byte for byte; an earlier export differed in one frame because the writer rounded to 6
 decimals — the writer now prints exact numbers, ADR-0008, TC-48).
 
-**The app's video** is the chosen plane swept through the scan (ADR-0011). On MRHead the default
-triangle gives 169 frames, 17 s at 10 fps; *Play* starts at the current plane and turns at both
-ends ("frame 63 of 128" under the cut for the picked triangle below); *Export video…* → Enter
-wrote `MRHead_cut.mp4` (10 fps, one frame per step by `ffprobe`; a 4-point trapezoid in the axial
-slice: 127 frames, 80×152), and a second export proposed `MRHead_cut_2.mp4`.
+**The app's video** is the chosen plane swept through the scan (ADR-0011), at 30 fps since v3.4
+(ADR-0014). On MRHead the default triangle gives 169 frames, 5.6 s; the picked triangle above 130
+frames, 4.3 s; *Play* starts at the current plane and turns at both ends ("frame 85 of 130" under
+the cut below); *Export video…* → Enter wrote `MRHead_1_cut.mp4` (30 fps, one frame per step by
+`ffprobe`, 138 × 204), and a second export proposed `MRHead_1_cut_2.mp4`. (v3.3 at 10 fps: 169
+frames, 17 s; a 4-point trapezoid in the axial slice 127 frames, 80×152.)
 
 **Export on a PC with a broken ffmpeg** (ADR-0012). Under Wine with the bundled Windows runtime
 and a fake `ffmpeg.exe` on the PATH that lists `libx264` but fails ("Unknown encoder
@@ -230,7 +231,35 @@ encoder instead" and wrote the edge-case video (16 frames); the app saved 169 fr
 "The ffmpeg on this computer did not work, so the app's own encoder made the video". Without any
 ffmpeg the built-in writer is used from the start (169 frames, 12.7 MB).
 
-![Playing the sweep of the picked triangle: frame 63 of 128](img/app_playing.png)
+![Playing the sweep of the picked triangle: frame 85 of 130, its FPS on the cut and in the
+toolbar](img/app_playing.png)
+
+**The FPS while playing and in the video** (v3.4, ADR-0014; the 2-vCPU VM, Robot on Xvfb). The
+number is the projection's speed for the frames being made — nearest neighbour, one thread, the
+median of the last 15 frames — and appears only then: in the toolbar and on the cut while Play runs,
+and in the corner of every exported frame. It follows what the cut goes through:
+
+| Scan, plane | Cut | While playing | Export: the run's median (3 runs) | Note |
+|-------------|-----|--------------:|----------------------------------:|------|
+| MRHead_1, default triangle (oblique) | 205 × 229 | 2 290 – 2 400 FPS in the head, ~10 000 in air | 3 240 (cold JVM), 6 380 – 6 450 | an oblique plane walks across slices: cache misses |
+| MRHead_1, picked triangle (`z` constant) | 138 × 203 | 8 570 – 9 290 | 12 600 – 19 000 | one slice per frame: the reads stay in cache |
+| croissant 500³, default triangle | 400 × 448 | 660 – 700 | 687 (cold), 910 – 916 | the size of the assignment's requirement: 6.6 – 9 × its "≥ 100" |
+| `Ex0.csv` on MRHead (command line) | 462 × 504 frames | — | labels 370 – 974 (4 frames) | prints "4 frames in 8.2 ms (490 fps)" |
+
+(The export's column is the same code as *Export video…*, run three times in one JVM by a small
+harness; the first run includes the Java compiler warming up the projection.)
+
+Frames through air are cheaper (a bounds check, no read), so the number rises at the ends of a
+sweep; it is a true value, not noise. While playing it is a little lower than in an export: the
+3-D view draws on the other core at the same time.
+
+![Three frames of the exported video, each with its FPS in the corner](img/export_fps_frames.png)
+
+**A window that never waits** (v3.4). The 3-D view now draws on a thread of its own; the window
+only copies its last finished frame. With Play running, dragging the 3-D view for 2.4 s moved the
+video from frame 99 to 163 (≈ 27 fps including the screenshots' own time), and the next second at
+the full 30 fps; before, every Play frame waited for a 3-D frame on the Swing thread (9–55 ms at half
+resolution, 37–209 ms sharp for 0.45–1.8 megapixels on this VM).
 
 ## 9. Other observations
 

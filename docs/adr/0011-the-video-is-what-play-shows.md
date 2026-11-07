@@ -2,7 +2,9 @@
 
 **Status:** Accepted · **Date:** 2026-11-05 · the same day [ADR-0012](0012-points-only-app-one-picture-panel.md)
 took CSV out of the app: the video is now always the sweep (decisions 1 and 3 below keep only that
-case), and the sliders and presets of decision 7 are gone
+case), and the sliders and presets of decision 7 are gone · on 2026-11-07
+[ADR-0014](0014-fps-that-means-something-and-a-modern-look.md) replaced decision 4 (the video is
+30 fps, about 200 frames) and decision 5 (the FPS is shown while the video plays and on its frames)
 
 ## Context
 The team tried v3.1.1 of the app and said, in their words: *"there is too much in the screen now

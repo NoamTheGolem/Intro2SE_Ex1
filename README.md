@@ -6,19 +6,23 @@ A Java desktop app in the spirit of 3D Slicer: open a 3-D scan (NRRD — an MRI 
 croissant …), **choose a cutting plane by clicking 3 points (or 4)**, and **see the object cut open
 at that plane — like a pie cut through the middle, with its inside showing on the cut face** —
 next to the cut itself as a 2-D image, which flips to the Axial, Coronal and Sagittal views.
-**Play** moves the plane through the scan and **Export video** saves that as an MP4. The
-projection runs at hundreds of frames per second on one CPU core; the same code also runs as the
+**Play** moves the plane through the scan and **Export video** saves that as an MP4, with the
+projection's FPS on every frame. The projection runs at hundreds to thousands of frames per second
+on one CPU core; the same code also runs as the
 command-line demo the assignment asks for (`python Ex0.py file.nrrd file.csv file.mp4`), which is
 where the lecturer's CSV use cases go.
 
 **Course:** Introduction to Software Engineering (OOP/OOD), Ariel University — Exercise 1
 **Team:** *<name 1 — ID>*, *<name 2 — ID>*
-**Status:** complete; runs on Windows straight after download (Java included); 101 automated tests incl. the lecturer's own edge cases; CI on Linux and Windows (JDK 17 and 21)
+**Status:** complete; runs on Windows straight after download (Java included); 108 automated tests incl. the lecturer's own edge cases; CI on Linux and Windows (JDK 17 and 21)
 
 ![The app: three points picked on the sagittal view (top of the head, jaw, back of the neck); the
 head cut open there with the brain on the cut face; the cut as the video frame (picture 1 of 4 —
 the arrows flip to Axial, Coronal, Sagittal); the points and the video on the
 right](docs/img/app_head_picked.png)
+
+![Playing: the FPS on the cut's corner and in the toolbar while the plane moves through the
+head](docs/img/app_playing.png)
 
 ---
 
@@ -53,12 +57,13 @@ runtime made by `jlink`) and its compiled code (`build/Ex0.jar`), so there is no
 nothing to build and no ffmpeg — the MP4 encoder is built in. Dropping a `.nrrd` file on `Ex1.exe`
 opens it.
 
-**If Windows blocks `Ex1.exe`** (a warning about an unknown or unsigned publisher): `Ex1.exe` is our
-own 60-line launcher and has no paid code-signing certificate; the Java runtime inside is signed
-by Oracle. Once: right-click the downloaded `.zip` → **Properties** → tick **Unblock** → OK, extract
-it again, then double-click `Ex1.exe`. If **Smart App Control** still blocks it, double-click
-**`Ex1 Viewer.bat`** — the same app, started with the signed `javaw.exe`. (On "Windows protected
-your PC", *More info → Run anyway* works too.)
+**If Windows blocks `Ex1.exe`:** it is our own 60-line launcher and has no paid code-signing
+certificate (the Java runtime inside is signed by Oracle), so Windows does not know it yet.
+* **"Windows protected your PC"** (SmartScreen): click **More info → Run anyway**.
+* To stop the question for good: right-click the downloaded `.zip` → **Properties** → tick
+  **Unblock** → OK, then extract it again.
+* If **Smart App Control** still blocks it, double-click **`Ex1 Viewer.bat`** — the same app,
+  started with the signed `javaw.exe`.
 
 The assignment's command works the same way, with the bundled Java:
 `python Ex0.py file.nrrd file.csv file.mp4` (or `Ex0.bat …`).
@@ -74,7 +79,7 @@ cases (CSV) ship in `data/course/` for the command line.
 ### Choose a cut and look inside — 4 clicks
 
 1. Open a scan (e.g. his `MRHead_1.nrrd`). After about a second the head appears in 3-D.
-2. Click **Pick a, b, c** (under "1. The plane"); the picture panel turns to the Axial view.
+2. Click **Pick a, b, c** (under *The plane*); the picture panel turns to the Axial view.
 3. Click three spots — on that view (its arrows flip to Coronal and Sagittal, its slider picks the
    slice) or on the 3-D object itself. For a trapezoid choose **4 points** first.
 4. Done: the app makes the triangle isosceles (it moves only `c`, along `a→c`, and says so), cuts
@@ -83,22 +88,28 @@ cases (CSV) ship in `data/course/` for the command line.
 
 ### Make the video — 2 clicks
 
-1. **Play** runs the video in the views, back and forth, at 10 frames per second: the chosen plane
-   moving through the whole scan (about 150 frames, 13–17 s, the current plane among them).
-2. **Export video…** → Enter saves the same video once, first frame to last, as an MP4 at 10 fps.
-   The proposed name (`<scan>_cut.mp4`, then `_cut_2` …) never replaces an earlier video. With
-   ffmpeg installed the file is small; without it — or if that ffmpeg fails — the app's own
-   encoder writes it (larger file, same frames).
+1. **Play** runs the video in the views, back and forth, at 30 frames per second: the chosen plane
+   moving through the whole scan (about 200 frames, 6–9 s, the current plane among them). While it
+   plays, the **FPS** — how many such cuts per second this computer computes — shows on the cut and
+   in the toolbar.
+2. **Export video…** → Enter saves the same video once, first frame to last, as an MP4 at 30 fps,
+   **with the FPS in the corner of every frame**, and says the run's FPS. The proposed name
+   (`<scan>_cut.mp4`, then `_cut_2` …) never replaces an earlier video. With ffmpeg installed the
+   file is small; without it — or if that ffmpeg fails — the app's own encoder writes it (larger
+   file, same frames).
 
 ### Using the app
 
 | Where | What |
 |-------|------|
-| Toolbar | **Open NRRD…** (the system's file dialog, anywhere on the computer) — or drop a `.nrrd` anywhere on the window; on the right, **Projection: N FPS** — how many cuts per second the algorithm computes for the current plane (nearest neighbour, one thread, median of the last 15). The object's surface is found automatically. |
+| Toolbar | **Open NRRD…** (the system's file dialog, anywhere on the computer) — or drop a `.nrrd` anywhere on the window; on the right the **FPS** while the video plays: how many cuts per second the projection computes (nearest neighbour, one thread, the median of the last 15 frames); while nothing plays it says *Play to measure FPS* — a still picture has no frame rate. The object's surface is found automatically. |
 | **3-D model — cut open by the plane** (left) | The scan as a solid, always cut open: the half between you and the plane is removed, so the cut face shows the inside (inside the triangle at full brightness, the rest of the plane darker); the outside is shaded. Box, plane outline and points on top. Drag = orbit, wheel = move the plane through the object, Ctrl+wheel = zoom, double-click = reset; while picking, a click places the point on the surface or on the cut face. |
-| **The picture panel** (middle) | One picture at a time, `◀ ▶` to flip, after the last back to the first: **1 The cut** — the projection of the plane, exactly one frame of the video ([ALGORITHM.md](docs/ALGORITHM.md)), `a`/`a1 a2`, `b`, `c` at its corners, its size below (and "frame i of n" while playing); **2 Axial, 3 Coronal, 4 Sagittal** — Slicer's views with A/P, R/L, S/I labels and a slider for the slice; the orange line is where the plane crosses it, the dots are its points. Click a view to place a point while picking. |
-| **1. The plane — choose 3 points (or 4)** | 3 points (triangle) or 4 (trapezoid); type them (Enter applies), **pick** one, or **Pick a, b, c** (all). Only problems are written below: a plane that is not isosceles is drawn as given and gets a **Make isosceles** button; a bad plane is a black frame, with the reason. |
-| **2. The video** | One line saying what the video is and how long; **Play** / **Stop** and **Export video…**. |
+| **The picture panel** (middle) | One picture at a time, `‹ ›` to flip, after the last back to the first: **1 The cut** — the projection of the plane, exactly one frame of the video ([ALGORITHM.md](docs/ALGORITHM.md)), `a`/`a1 a2`, `b`, `c` at its corners, its size below (and "frame i of n" and the FPS while playing); **2 Axial, 3 Coronal, 4 Sagittal** — Slicer's views with A/P, R/L, S/I labels and a slider for the slice; the orange line is where the plane crosses it, the dots are its points. Click a view to place a point while picking. |
+| **1 The plane** | the switch **3 points (triangle) / 4 points (trapezoid)**; type the points (Enter applies), **Pick** one, or **Pick a, b, c** (all). Only problems are written below: a plane that is not isosceles is drawn as given and gets a **Make isosceles** button; a bad plane is a black frame, with the reason. |
+| **2 The video** | **Play** / **Stop** and **Export video…**, and one line saying how long the video is. |
+
+The look is the app's own (dark graphite, amber for everything that is the plane, Segoe UI on
+Windows), drawn with Swing itself — no library ([ADR-0014](docs/adr/0014-fps-that-means-something-and-a-modern-look.md)).
 
 ![The lecturer's scans cut open: head, onion, swiss roll, croissant × (a triangle, the axial,
 coronal and sagittal planes)](docs/img/cut_open_gallery.png)
@@ -117,8 +128,8 @@ Warning : row 3 (line 4): drawn as given, with the algorithm's rails a1->b, a2->
 Volume  : MRHead.nrrd 256x256x130 INT16
 Planes  : 4 from Ex0.csv
 Window  : [0.00, 141.06]
-Frames  : 462x504 @ 10 fps, nearest, 1 thread(s)
-Projection: 4 frames in 25.5 ms (157 fps, I/O excluded)
+Frames  : 462x504 @ 10 fps, nearest, 1 thread(s), the projection's FPS on every frame
+Projection: 4 frames in 8.2 ms (490 fps, I/O excluded)
 Wrote   : out.mp4
 ```
 
@@ -132,7 +143,7 @@ python Ex0.py <file.nrrd> <file.csv> <file.mp4> [options]       (no arguments: o
   file.nrrd   3-D volume (NRRD)
   file.csv    planes: one per row, "N, x1,y1,z1, ..." with N = 3 (a, b, c) or 4 (a1, b, a2, c),
               or plain rows of 9 / 12 numbers
-  file.mp4    output video, one frame per CSV row, in order
+  file.mp4    output video, one frame per CSV row, in order, each with its FPS in the corner
 
 Options
   --interp nearest|trilinear   sampling (default nearest)
@@ -140,6 +151,7 @@ Options
   --window LO HI               grey window (default: 0.5-99.5 percentiles of the volume)
   --frames DIR                 also save every frame as PNG
   --threads N|auto             worker threads for the projection (default 1)
+  --no-fps                     frames without the FPS label (clean frames, e.g. to compare them)
   --strict                     stop with exit 2 (no video) if any row breaks the plane rules
 ```
 
@@ -165,7 +177,7 @@ croissant. Use `java -Xmx… -jar build/Ex0.jar` for 16/32-bit volumes of 1000³
 ## Tests
 
 ```bash
-scripts/test.sh          # Linux / macOS — build with -Xlint:all -Werror, then 101 JUnit tests
+scripts/test.sh          # Linux / macOS — build with -Xlint:all -Werror, then 108 JUnit tests
 scripts\test.bat         # Windows
 ./gradlew test           # Gradle (downloads Gradle once; JUnit itself is vendored in lib/)
 ```
@@ -186,9 +198,12 @@ script of the app: [docs/TESTING.md](docs/TESTING.md).
 | Trilinear | **110 – 136 FPS** | 149 – 167 |
 
 The lecturer's use cases through the demo: 604–1 299 FPS on his 256×256×130 scans, **238 FPS on
-his 500³ croissant**, all 640 rows without a warning. The app's 3-D view (cut open) redraws in
-14–26 ms with 2 threads, 4–7 ms at the half resolution used while dragging; its solid model is
-ready 0.55–0.92 s after opening a 256×256×130 scan (2.6 s for 500³).
+his 500³ croissant**, all 640 rows without a warning. In the app, while the video plays: 2 300–
+10 000 FPS on his head (a 205 × 229 cut; frames through air are cheaper), **660–700 FPS on the
+500³ croissant** (400 × 448). The app's 3-D view (cut open) redraws in 14–26 ms with 2 threads,
+4–7 ms at the half resolution used while dragging, on a thread of its own — Play keeps its 30 fps
+while the view is dragged; its solid model is ready 0.55–0.92 s after opening a 256×256×130 scan
+(2.6 s for 500³).
 
 The course's `Ex0.csv` on a 500³ phantom — rows 1–4, one frame each:
 
@@ -208,7 +223,8 @@ points (picked on Slicer's three views or on the object, made isosceles with one
 and *moved* as centre + angles + size (`PlaneSpec`); the 3-D view is a CPU ray caster over a
 solid model of the scan (`SolidModel`, `CutawayRenderer`) that removes the half in front of the
 plane and paints the scan's own grey values on the cut face — no OpenGL, so it runs on any JDK and
-will port to Android with `core`.
+will port to Android with `core` — and draws on a thread of its own, so the window never waits for
+it. The FPS is one meter (`FpsMeter`) for the screen, the exported video and the command line.
 
 ## Project structure
 
@@ -224,8 +240,9 @@ core/   pure Java (no java.io / AWT) -> reusable on Android
 app/    desktop side
   ex1.io     NrrdReader/Writer, PlaneCsvReader/Writer, VideoWriter (+Mp4Writer/Ffmpeg/Png), VideoWriters
   ex1.app    StudioApp (the app), Sweep (its video), PlaneSpec, VolumeGeometry, SolidModel, CutawayRenderer,
-             VolumeView3D + Raster + Camera3D, OrthoView, SliceView,
+             VolumeView3D + Raster + Camera3D, OrthoView, SliceView, FpsMeter + FpsOverlay (the FPS),
              Ex0 (demo main), FrameRenderer, Benchmark, SweepGenerator, PhantomGenerator
+  ex1.app.ui the look: Theme, FlatButtonUI, FlatTextFieldUI, FlatScrollBarUI, FlatSliderUI, Icons, Badge
 data/   dataset (data/README.md): MRHead.nrrd, dice.nrrd, phantoms, Ex0.csv, course/ (the lecturer's CSVs), plane lists
 docs/   SRS.md · SDD.md · ALGORITHM.md (EDD) · TESTING.md (STP/STD) · EXPERIMENT.md · AI_USAGE.md · adr/
 results/ output videos      lib/ JUnit 4 jars (offline tests)
@@ -238,9 +255,9 @@ results/ output videos      lib/ JUnit 4 jars (offline tests)
 | 1 Problem & scope | this README |
 | 2 SRS | [docs/SRS.md](docs/SRS.md) — requirements with IDs, use cases, traceability matrix |
 | 3 Main algorithm | [docs/ALGORITHM.md](docs/ALGORITHM.md) — EDD: exact spec, 14 design decisions, validation rules, alternatives, error handling, budget |
-| — Architecture | [docs/SDD.md](docs/SDD.md) — C4 diagrams, class/sequence diagrams, rationale, risks · [docs/adr/](docs/adr/) — 10 decision records |
+| — Architecture | [docs/SDD.md](docs/SDD.md) — C4 diagrams, class/sequence diagrams, rationale, risks · [docs/adr/](docs/adr/) — 14 decision records |
 | 4 Dataset | [data/README.md](data/README.md) — incl. the lecturer's test data |
-| 5 Testing strategy | [docs/TESTING.md](docs/TESTING.md) — STP + STD (TC-01 … TC-106), incl. the lecturer's edge cases, the demo and the app |
+| 5 Testing strategy | [docs/TESTING.md](docs/TESTING.md) — STP + STD (TC-01 … TC-127), incl. the lecturer's edge cases, the demo and the app |
 | 6 Implementation | `core/`, `app/`; commit history of this repository |
 | 7 Demo | `python Ex0.py file.nrrd file.csv file.mp4` (above) — and the app's **Export video…** |
 | 8 Experiment | [docs/EXPERIMENT.md](docs/EXPERIMENT.md) + [results/](results/) |

@@ -1,10 +1,11 @@
 # Testing Strategy — Test Plan (STP) and Test Descriptions (STD)
 
-**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.3 (3.0 added the app; 3.1 adds
+**Project:** Ex1 — Plane Projection of a 3D Volume · **Version:** 3.4 (3.0 added the app; 3.1 adds
 the lecturer's data as acceptance tests — B.2, B.4 `EdgeCasesTest`, B.5 — the cut-open 3-D view
 and point picking — B.10 — and a new manual script, B.11; 3.2 tests the video = what Play shows:
 `SweepTest`, TC-107…TC-109; 3.3 the export on a PC with a broken ffmpeg — `VideoWritersTest`,
-TC-110…TC-113 — the export's names and messages, TC-114…TC-115, and the points-only screen in B.11; 3.3.1: no Cut open / Samples, the system's file dialogs, TC-94, TC-101)
+TC-110…TC-113 — the export's names and messages, TC-114…TC-115, and the points-only screen in B.11; 3.3.1: no Cut open / Samples, the system's file dialogs, TC-94, TC-101; 3.4: the FPS on the frames
+and while playing, the look, the 3-D view on its own thread — B.12, TC-117…TC-127)
 **Verifies:** every REQ/NFR of the [SRS](SRS.md) (traceability in SRS §5) · **Design under test:** [SDD](SDD.md), [EDD](ALGORITHM.md)
 
 ---
@@ -80,7 +81,7 @@ scripts\test.bat           # Windows
 ./gradlew test             # or Gradle (downloads Gradle once; tests still offline)
 java -cp build/Ex0.jar ex1.app.Benchmark 500
 ```
-Result at submission: **101 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present). On the
+Result at submission: **108 tests, 0 failures, 0 skipped** (Linux, JDK 21, ffmpeg present). On the
 CI Windows runner the demo step goes through `python Ex0.py`, which uses the bundled `runtime/`.
 
 ---
@@ -138,7 +139,7 @@ are the assertions in the code; this table is the index a reviewer reads first.
 | TC-35 | `wrongArgumentsGiveExitCode1`, `missingFileGivesExitCode2` | REQ-15, NFR-04 | one file, bad `--interp`, reversed `--window`, unknown option → exit 1; missing files → exit 2 |
 | TC-36 | `threadsOptionGivesSameVideoSize` | REQ-15, NFR-02 | `--threads auto` → 5 frames; `--threads 0`/`lots` → exit 1 |
 | TC-37 | `csvWithoutUsablePlaneGivesExitCode2` | REQ-07 | CSV `1,2,3` → exit 2 |
-| TC-38 | `EdgeCasesTest.demoGivesTheFramesTheCourseExpects` | REQ-04, REQ-06, REQ-07, REQ-12, REQ-17, NFR-04 | **the lecturer's `edge_cases.csv` on the die**, through `Ex0.run` with `--frames`: 16 PNGs; frames 6 and 9–16 all black, the others not; a warning for exactly rows 7–16; 1, 6, 4 pips on frames 1, 2, 3; "row 9 (line 35): the count says 4 points but 3 points are given" |
+| TC-38 | `EdgeCasesTest.demoGivesTheFramesTheCourseExpects` | REQ-04, REQ-06, REQ-07, REQ-12, REQ-17, NFR-04 | **the lecturer's `edge_cases.csv` on the die**, through `Ex0.run` with `--frames --no-fps` (the pips are counted; the FPS label is light text too): 16 PNGs; frames 6 and 9–16 all black, the others not; a warning for exactly rows 7–16; 1, 6, 4 pips on frames 1, 2, 3; "row 9 (line 35): the count says 4 points but 3 points are given" |
 
 ### B.5 CSV — `PlaneCsvReaderTest` (io)
 
@@ -230,16 +231,38 @@ Data: the lecturer's scans from his Drive folder (`MRHead_1`, `onion`, `swiss_ro
 | TC-92 | drop `MRHead_1.nrrd` on the window (or Open NRRD…) | status "MRHead_1.nrrd 256x256x130 INT16, voxel 1.00 x 1.00 x 1.30 mm"; picture 1/4: a default triangle's cut (Axial/Coronal/Sagittal with A/P/R/L/S/I labels one arrow away); about a second later the head in 3-D, cut open by the triangle, brain visible on the cut face |
 | TC-93 | drag in the 3-D view; Ctrl+wheel; wheel; double-click | the object orbits (coarse while dragging, sharp a moment later); zooms; the plane slides through the head and the cut face changes; the camera resets |
 | TC-94 | look at the toolbar; drop `onion.nrrd` from the file manager anywhere on the window (on the controls too) | only **Open NRRD…** and the FPS: no Cut open, Surface or Samples (ADR-0012, ADR-0013); the onion opens, always cut open |
-| TC-95 | the toolbar's **Projection: N FPS**; slide the plane with the wheel | the speed of the current cut (≈ 1000–4000 FPS on a laptop for MRHead), steady to within a few hundred while nothing changes; all views update |
+| TC-95 | the toolbar's FPS with nothing playing; slide the plane with the wheel | *Play to measure FPS* (dim), no number on the cut; the wheel moves the plane and all views update — still no number (nothing plays: ADR-0014) |
 | TC-96 | the picture panel's **▶** four times, then **◀** once; move each view's slider | 1/4 the cut → 2/4 Axial → 3/4 Coronal → 4/4 Sagittal → 1/4 the cut; ◀ from the cut → 4/4 Sagittal; the slider changes that view's slice and the orange line moves with the plane |
 | TC-97 | **Pick a, b, c** while the cut is on show, then click three spots on the Axial picture (or flip to another view first) | the panel turns to Axial by itself; the prompt names the next point; after the third click: "Clicks are never exact, so c was moved a little along the line a-c to make the triangle isosceles." — no numbers; the head cut open there, camera facing the cut; the panel back on the cut (stays on the view if you flipped it yourself) |
 | TC-98 | **4 points (trapezoid)**; then **Pick a1, a2, b, c** and four clicks on the Axial picture | the button stays on 4 points (the 3.2 bug), rows a1, a2, b, c, the cut becomes a trapezoid; after four clicks the nearest isosceles trapezoid in that slice, its cut = the slice inside the trapezoid; **3 points** turns it back into a triangle |
 | TC-99 | pick on the 3-D object (surface, then cut face); a single point's **pick**; type coordinates + Enter; type a triangle that is not isosceles; three points on one line | the point lands where clicked; only that point changes; typed values used; "Not isosceles (drawn as given): …" with a **Make isosceles** button, which fixes it and disappears; collinear points → black cut and "points a, b, c are collinear (no plane)" next to the points |
 | TC-100 | drop a `.csv` on the window | "Lists of planes (CSV) are for the command line: python Ex0.py scan.nrrd that.csv out.mp4"; nothing else changes |
 | TC-101 | **Open NRRD…** | the system's own dialog (Windows: Explorer's, starting in Downloads, or in the open scan's folder), showing `.nrrd`/`.nhdr` files; any drive or folder; the chosen scan opens with the default triangle. *5 Nov under Wine: the Windows dialog opened in Downloads, a pasted path `Z:\…\onion.nrrd` opened the onion; the Save dialog of Export proposed `onion_cut.mp4`, then `onion_cut_2.mp4`* |
-| TC-102 | **Play**, wait, **Stop** | the plane moves through the scan from the current plane, turns at either end and runs back; "frame i of n" under the cut; Stop keeps that frame |
-| TC-103 | **Export video…** → Enter; again → Enter; replace a video that is open in a player; then `ffprobe` | `MRHead_cut.mp4`, then `MRHead_cut_2.mp4` proposed; the open one → "The file is open in another program …"; 10 fps, one frame per sweep step (5 Nov: MRHead 169, 4-point trapezoid 127). Under Wine with a fake `ffmpeg.exe` that fails: the video is still written, with "The ffmpeg on this computer did not work, so the app's own encoder made the video." |
+| TC-102 | **Play**, wait, **Stop** | the plane moves through the scan at 30 fps from the current plane, smoothly, turns at either end and runs back; "frame i of n" under the cut; the FPS on the cut's corner and in the toolbar (amber dot); Stop keeps that frame and the FPS goes |
+| TC-103 | **Export video…** → Enter; again → Enter; replace a video that is open in a player; then `ffprobe`, and look at a frame | `MRHead_cut.mp4`, then `MRHead_cut_2.mp4` proposed; the open one → "The file is open in another program …"; the dialog says the run's FPS (the median frame); 30 fps, one frame per sweep step (7 Nov: MRHead 169 frames, 206 × 230; a picked triangle 130 frames, 138 × 204); every frame has "N FPS" in its top-left corner (5 Nov at 10 fps: 169, trapezoid 127). Under Wine with a fake `ffmpeg.exe` that fails: the video is still written, with "The ffmpeg on this computer did not work, so the app's own encoder made the video." |
 | TC-104 | drop a `.txt` file; Open NRRD… on a non-NRRD | friendly dialog, app keeps running |
 | TC-105 | repeat TC-92, TC-97 and TC-102 with `onion`, `swiss_roll`, `biscuit_cake`, `croissant` | each object appears cut open with the automatic surface; the croissant (500³) model is ready within ~3 s; their use cases (CSV) through `python Ex0.py` (B.4) |
-| TC-106 | **download and run** (NFR-11): on a Windows PC *without Java*, download the repository ZIP, unzip, double-click `Ex1.exe`; drop `MRHead_1.nrrd` on `Ex1.exe`; run `python Ex0.py data\dice.nrrd data\course\edge_cases.csv x.mp4` | the app opens (no console window, no question about Java); the dropped scan opens; the demo writes 16 frames. *Smoke test without such a PC (4 Nov): the bundled runtime under Wine prints `openjdk version "25.0.1"`, writes the edge-case MP4 **byte for byte equal** to the Linux JDK's, and `Ex1.exe <scan>` opens the app with the head cut open* |
+| TC-106 | **download and run** (NFR-11): on a Windows PC *without Java*, download the repository ZIP, unzip, double-click `Ex1.exe`; drop `MRHead_1.nrrd` on `Ex1.exe`; run `python Ex0.py data\dice.nrrd data\course\edge_cases.csv x.mp4` | the app opens (no console window, no question about Java); the dropped scan opens; the demo writes 16 frames. *Smoke test without such a PC (4 Nov): the bundled runtime under Wine prints `openjdk version "25.0.1"`, writes the edge-case MP4 **byte for byte equal** to the Linux JDK's (since 3.4 with `--no-fps`: the FPS label's digits differ from run to run), and `Ex1.exe <scan>` opens the app with the head cut open* |
 | TC-116 | **Windows refuses an unsigned program** (5 Nov, the team's PC: "security warning … signed", nothing starts): unblock the downloaded zip (Properties → Unblock), extract again, `Ex1.exe`; if Smart App Control still blocks it, `Ex1 Viewer.bat` | the app opens. Checked here: every `.exe`/`.dll` in `runtime/` has a complete Authenticode signature (71 files; `java.exe`, `javaw.exe` byte-identical to Oracle's signed originals in the jmods); under Wine both `Ex1.exe` and `cmd /c "Ex1 Viewer.bat"` open the app and `java.exe -version` / the edge-case demo run. *To do on the PC* |
+
+### B.12 The FPS, the look, a window that never waits — `FpsTest`, `LookAndSpeedTest` (app) and manual steps
+
+| TC | Test | Verifies | Input → expected |
+|----|------|----------|------------------|
+| TC-117 | `oneSlowFrameDoesNotMoveTheFps` | REQ-20, REQ-24 | 14 frames of 1 ms and one of 50 ms → **1,000 FPS** (the median); nothing measured → 0 and no value; `reset` forgets; a whole run (`fpsOf`, the export's summary) with one 50 ms frame of five → 1,000 FPS, not the mean's 93 |
+| TC-118 | `theNumberIsShownToThreeSignificantDigits` | REQ-20, REQ-28 | 24 837 → "24,800 FPS"; 2 111 → "2,110 FPS"; 512.4 → "512 FPS"; 99.6 → "100 FPS"; 999.6 → "1,000 FPS"; 4.2 → "4.2 FPS" |
+| TC-119 | `exportedFramesShowTheFpsInTheCornerAndBlackFramesStayBlack` | REQ-28, REQ-07 | a triangle through a 160³ phantom, rendered with and without `setShowFps`: > 100 pixels differ, **all** in the top-left label box (left 60 %, top third); the black frame of a null plane stays all 0 |
+| TC-120 | `aFrameTooSmallToReadTheLabelGetsNone` | REQ-28 | a 40 × 30 frame → no label, untouched; 300 × 200 → a label with > 30 bright text pixels |
+| TC-121 | `commandLineWritesTheFpsUnlessNoFps` | REQ-28, REQ-15 | `Ex0.run` with `--frames` on one apex-up triangle: by default the frame's top-left corner has the light text; with `--no-fps` that corner is black, as the plane leaves it |
+| TC-122 | `theThemeGivesEveryControlItsFlatLook` | NFR-12 | after `Theme.install()` a JButton, JToggleButton, JTextField, JScrollBar and JSlider get `FlatButtonUI`, `FlatTextFieldUI`, `FlatScrollBarUI`, `FlatSliderUI` (Swing can create them: public); a primary button paints amber; the switch and the field paint without error |
+| TC-123 | `theThreeDViewDrawsOnItsOwnThread` | NFR-10 | `VolumeView3D` given a 48³ phantom, its model and a plane, off the Swing thread → the frame thread finishes within 10 s and a frame is shown; after `dispose` its timer asks for nothing (no rejected task) |
+
+Manual (Windows; Robot on Xvfb and Wine, 7 Nov):
+
+| TC | Steps | Expected |
+|----|-------|----------|
+| TC-124 | open MRHead_1; look at the toolbar; **Play**; **Stop** | before Play: *Play to measure FPS*, nothing on the cut; playing: "● N FPS" in the toolbar and on the cut's corner, changing as the cut goes through the head (VM: 2,290–2,400 inside the head, ~10,000 through air) and through the 500³ croissant (VM: 660–700); after Stop: *Play to measure FPS* again |
+| TC-125 | look at the window on Windows 11 | dark graphite, Segoe UI, amber only for the plane (points' names, the cut's frame, Play, the FPS dot, the step numbers); flat rounded buttons, the 3 / 4 points switch, rounded fields with a blue ring while typing; dialogs dark with round icons and a primary (amber) default button; the file dialogs and title bar are Windows' own. *Checked under Wine and on Linux; Windows 11: to do on the PC* |
+| TC-126 | **Play**, then drag the 3-D view around for 2 s | the video keeps going at ~30 fps (VM: frame 99 → 163 in 2.4 s while dragging, screenshots included); the 3-D view follows, coarse while moving, sharp after; buttons respond at once |
+| TC-127 | download the zip from the browser, extract, double-click `Ex1.exe` | SmartScreen "Windows protected your PC" (an unsigned program); **More info → Run anyway** opens the app; or unblock the zip first (TC-116) and no warning comes |
+
