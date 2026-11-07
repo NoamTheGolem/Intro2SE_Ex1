@@ -7,14 +7,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The video the app plays and exports when no use case is loaded: the current plane moved along
- * its normal through the whole volume, so the cut travels through the object from one side to the
- * other - the same kind of video as the lecturer's slice-by-slice use cases, for any plane.
+ * The video the app plays and exports: the current plane moved along its normal through the whole
+ * volume in whole-voxel steps, so the cut travels through the object from one side to the other -
+ * the same kind of video as the lecturer's slice-by-slice use cases, for any plane.
  */
 final class Sweep
 {
-    /** About this many frames per pass: 10-20 s of video at 10 fps, whatever the volume size. */
-    static final int TARGET_FRAMES = 150;
+    /**
+     * About this many frames per pass (step = range / 200 voxels, rounded, at least 1): 6-9 s of
+     * video at 30 fps for any scan - a 256^3 head moves 1-2 voxels per frame, a 500^3 one 3-4.
+     */
+    static final int TARGET_FRAMES = 200;
 
     /** The planes of one pass, in order, and where the current plane is among them. */
     static final class Pass

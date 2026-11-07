@@ -40,6 +40,21 @@ final class Camera3D
     }
 
     /**
+     * @return an independent copy: a frame drawn on another thread keeps the camera it was asked
+     *         with, whatever the mouse does meanwhile
+     */
+    Camera3D copy()
+    {
+        Camera3D c = new Camera3D();
+        c.yaw = yaw;
+        c.pitch = pitch;
+        c.zoom = zoom;
+        c.centre = centre;
+        c.updateBasis();
+        return c;
+    }
+
+    /**
      * @param (double) dYaw degrees to add to the yaw
      * @param (double) dPitch degrees to add to the pitch
      */

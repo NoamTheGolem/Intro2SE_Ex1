@@ -43,6 +43,7 @@ public final class Ex0
             + "  --window LO HI               intensity window (default: 0.5-99.5 percentiles)\n"
             + "  --frames DIR                 also save every frame as PNG in DIR\n"
             + "  --threads N|auto             worker threads for the projection (default 1)\n"
+            + "  --no-fps                     no FPS label on the frames (clean frames, e.g. to compare them)\n"
             + "  --strict                     stop (no video) if any CSV row breaks the plane rules\n";
 
     /** Parsed command-line options. */
@@ -57,6 +58,7 @@ public final class Ex0
         File framesDir;
         boolean strict;
         int threads = 1;
+        boolean showFps = true;
     }
 
     /** Thrown for problems that map to a specific exit code. */
@@ -136,11 +138,17 @@ public final class Ex0
         List<Plane> planes = loadPlanes(opt.csv, opt.strict);
         IntensityWindow window = chooseWindow(volume, opt);
         FrameRenderer renderer = new FrameRenderer(volume, planes, window, Projector.create(opt.interp, opt.threads));
+        renderer.setShowFps(opt.showFps);
         System.out.println("Volume  : " + opt.nrrd.getName() + " " + volume);
         System.out.println("Planes  : " + planes.size() + " from " + opt.csv.getName());
         System.out.println("Window  : " + window);
+        String label = ", the projection's FPS on every frame";
+        if (!opt.showFps)
+        {
+            label = "";
+        }
         System.out.println("Frames  : " + renderer.width() + "x" + renderer.height() + " @ " + opt.fps + " fps, "
-                + opt.interp.name().toLowerCase(Locale.ROOT) + ", " + opt.threads + " thread(s)");
+                + opt.interp.name().toLowerCase(Locale.ROOT) + ", " + opt.threads + " thread(s)" + label);
         renderVideo(renderer, opt);
     }
 
@@ -240,6 +248,11 @@ public final class Ex0
             else if (a.equals("--strict"))
             {
                 opt.strict = true;
+                i++;
+            }
+            else if (a.equals("--no-fps"))
+            {
+                opt.showFps = false;
                 i++;
             }
             else if (a.equals("--frames"))

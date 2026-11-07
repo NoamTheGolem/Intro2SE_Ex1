@@ -1,5 +1,6 @@
 package ex1.app;
 
+import ex1.app.ui.Theme;
 import ex1.core.Image2D;
 import ex1.core.IntensityWindow;
 import ex1.core.Plane;
@@ -12,7 +13,6 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -64,7 +64,7 @@ final class OrthoView extends JComponent
     static final Color[] VIEW_COLOURS = {new Color(0xE05252), new Color(0x63B85F), new Color(0xE3C14A)};
 
     private static final long serialVersionUID = 1L;
-    private static final Color BACKGROUND = new Color(0x101114);
+    private static final Color BACKGROUND = Theme.WELL;
     private static final Color PLANE = new Color(0xFF9F1C);
     private static final Color LABEL = new Color(0xF2D64B);
     private static final int MARGIN = 14;
@@ -101,7 +101,7 @@ final class OrthoView extends JComponent
         this.host = host;
         setOpaque(true);
         setBackground(BACKGROUND);
-        setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        setFont(Theme.semibold(Theme.TEXT_SIZE));
         setPreferredSize(new Dimension(260, 220));
         MouseAdapter mouse = new MouseAdapter()
         {
@@ -268,7 +268,7 @@ final class OrthoView extends JComponent
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         if (image == null)
         {
-            g.setColor(new Color(120, 126, 138));
+            g.setColor(Theme.TEXT_FAINT);
             String hint = VolumeGeometry.name(view);
             g.drawString(hint, (getWidth() - g.getFontMetrics().stringWidth(hint)) / 2, getHeight() / 2);
             return;
@@ -380,7 +380,7 @@ final class OrthoView extends JComponent
     private void drawPoints(Graphics2D g)
     {
         int c = geometry.constantAxis(view);
-        g.setFont(getFont().deriveFont(Font.BOLD, 12f));
+        g.setFont(Theme.semibold(Theme.SMALL_SIZE));
         int n = points.size();
         double[] xs = new double[n];
         double[] ys = new double[n];
@@ -453,7 +453,7 @@ final class OrthoView extends JComponent
      */
     private void drawLabels(Graphics2D g, double dw, double dh)
     {
-        g.setFont(getFont().deriveFont(Font.BOLD, 13f));
+        g.setFont(getFont());
         String[] labels = geometry.labels(view);
         if (labels != null)
         {
@@ -467,8 +467,9 @@ final class OrthoView extends JComponent
         }
         if (picking)
         {
-            g.setColor(new Color(255, 159, 28));
-            g.drawString("click to place the point", 8, getHeight() - 8);
+            g.setColor(Theme.PLANE);
+            g.setFont(Theme.font(Theme.SMALL_SIZE));
+            g.drawString("Click to place the point", 10, getHeight() - 10);
         }
     }
 
@@ -660,13 +661,14 @@ final class OrthoView extends JComponent
             super(new BorderLayout());
             ortho = new OrthoView(view, host);
             final Host h = host;
-            JPanel bar = new JPanel(new BorderLayout(6, 0));
-            bar.setBackground(VIEW_COLOURS[view].darker());
-            bar.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+            JPanel bar = new JPanel(new BorderLayout(8, 0));
+            bar.setBackground(Theme.CHROME);
+            bar.setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
             JLabel name = new JLabel(VolumeGeometry.name(view) + "  " + VolumeGeometry.hint(view));
-            name.setForeground(Color.WHITE);
-            name.setFont(name.getFont().deriveFont(Font.BOLD));
-            position.setForeground(Color.WHITE);
+            name.setForeground(Theme.TEXT);
+            name.setFont(Theme.semibold(Theme.TEXT_SIZE));
+            position.setForeground(Theme.TEXT_DIM);
+            position.setFont(Theme.font(Theme.SMALL_SIZE));
             slider.setOpaque(false);
             slider.setEnabled(false);
             slider.addChangeListener(new ChangeListener()

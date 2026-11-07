@@ -45,7 +45,8 @@ public class EdgeCasesTest
         System.setErr(new PrintStream(err, true, "UTF-8"));
         try
         {
-            Ex0.run(new String[] {nrrd.getPath(), csv.getPath(), mp4.getPath(), "--frames", frames.getPath()});
+            // Clean frames: the pips are counted, and the FPS label is light text too.
+            Ex0.run(new String[] {nrrd.getPath(), csv.getPath(), mp4.getPath(), "--frames", frames.getPath(), "--no-fps"});
         }
         catch (Ex0.ExitException e)
         {

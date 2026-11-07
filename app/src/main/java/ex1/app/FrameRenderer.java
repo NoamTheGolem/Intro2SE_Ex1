@@ -11,14 +11,20 @@ import java.util.List;
 
 /**
  * Turns plane number i into one 8-bit grey frame. Shared by the command-line demo (Ex0) and
- * the app (StudioApp: preview and export), so both produce identical frames.
+ * the app (StudioApp: export), so both produce identical frames.
  *
  * All frames have one size: the largest plane, rounded up to even (decision D8); each plane is
  * centred on black. A null plane (a CSV row that cannot be projected) gives an all-black frame,
  * so frame i always belongs to row i. Buffers are reused, so rendering allocates nothing per frame.
+ *
+ * With {@link #setShowFps} on, every frame that was projected also shows the FPS of the
+ * projection in its top-left corner ({@link FpsMeter}, {@link FpsOverlay}; ADR-0014); a black
+ * frame stays black.
  */
 public final class FrameRenderer
 {
+    private static final int WARM_UP_PROJECTIONS = 5;
+
     private final Volume volume;
     private final List<Plane> planes;
     private final IntensityWindow window;
@@ -28,6 +34,10 @@ public final class FrameRenderer
     private final Image2D image;
     private final byte[] frame;
     private long lastNanos;
+    private boolean showFps;
+    private boolean warmedUp;
+    private final FpsMeter meter = new FpsMeter();
+    private final FpsOverlay overlay = new FpsOverlay();
 
     /**
      * @param (Volume) volume source volume
@@ -67,6 +77,14 @@ public final class FrameRenderer
     }
 
     /**
+     * @param (boolean) on true writes the projection's FPS on every projected frame
+     */
+    public void setShowFps(boolean on)
+    {
+        showFps = on;
+    }
+
+    /**
      * Renders plane i. The returned array is reused by the next call.
      *
      * @param (int) i plane index
@@ -81,11 +99,40 @@ public final class FrameRenderer
             lastNanos = 0;
             return frame;
         }
+        if (showFps && !warmedUp)
+        {
+            warmUp();
+        }
         long t0 = System.nanoTime();
         projector.project(volume, plane, image);
         lastNanos = System.nanoTime() - t0;
         window.toGrey(image, frame, width, height, plane.imageWidth(), plane.imageHeight());
+        if (showFps)
+        {
+            meter.add(lastNanos);
+            overlay.draw(frame, width, height, meter.text());
+        }
         return frame;
+    }
+
+    /**
+     * Projects the first plane a few times untimed, so the FPS on the first frames is the
+     * algorithm's speed and not the Java compiler warming up.
+     */
+    private void warmUp()
+    {
+        warmedUp = true;
+        for (int i = 0; i < planes.size(); i++)
+        {
+            if (planes.get(i) != null)
+            {
+                for (int k = 0; k < WARM_UP_PROJECTIONS; k++)
+                {
+                    projector.project(volume, planes.get(i), image);
+                }
+                return;
+            }
+        }
     }
 
     /**

@@ -1,5 +1,8 @@
 package ex1.app;
 
+import ex1.app.ui.Badge;
+import ex1.app.ui.Icons;
+import ex1.app.ui.Theme;
 import ex1.core.Image2D;
 import ex1.core.IntensityWindow;
 import ex1.core.ParallelProjector;
@@ -20,17 +23,12 @@ import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FileDialog;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Rectangle;
-import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -39,31 +37,31 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
-import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
-import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.JToggleButton;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.TransferHandler;
-import javax.swing.UIManager;
+import javax.swing.border.Border;
 
 /**
  * The application (the deliverable of Ex1): open a scan (NRRD) from anywhere on the computer or by
@@ -76,31 +74,42 @@ import javax.swing.UIManager;
  * Export video saves one pass of it as an MP4. Lists of planes in CSV files (the lecturer's use
  * cases) are the command line's job: python Ex0.py scan.nrrd planes.csv out.mp4 (ADR-0012).
  * Sampling is nearest-neighbour, the course's M[p] (ADR-0011).
+ *
+ * The FPS - how many cuts per second the projection computes - is measured on the frames of the
+ * video while it plays, shown in the toolbar and on the picture, and written on every frame of an
+ * exported video; while nothing plays there is nothing to measure and it says so (ADR-0014). The
+ * look is {@link Theme}: dark graphite, amber for the plane.
  */
 public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 {
     private static final String TITLE = "Ex1 - cut a 3-D scan with a plane";
     private static final int CORES = Runtime.getRuntime().availableProcessors();
-    /** Play and export use one rate, the Ex0 default, so Play shows the video at its real speed. */
-    static final int VIDEO_FPS = 10;
-    private static final double NANOS_PER_MS = 1e6;
+    /** Play and export use one rate, so Play shows the video at its real speed: smooth motion. */
+    static final int VIDEO_FPS = 30;
     private static final String[] TRIANGLE_NAMES = {"a", "b", "c"};
     private static final String[] TRAPEZOID_NAMES = {"a1", "a2", "b", "c"};
-    private static final int CONTROL_WIDTH = 380;
+    private static final int CONTROL_WIDTH = 384;
+    /** Width of the info texts of the control column (its padding is 18 on each side). */
+    private static final int INFO_WIDTH = CONTROL_WIDTH - 46;
     /** Wrap width of HTML labels in CSS px: Swing draws one CSS px as 1.3 screen pixels. */
-    private static final int HTML_WIDTH = (CONTROL_WIDTH - 80) * 10 / 13;
-    private static final int INFO_HEIGHT = 44;
-    private static final String HINT_COLOUR = "#707070";
-    /** The FPS shown is the median of this many recent projections: one slow frame (GC) is ignored. */
-    private static final int FPS_SAMPLES = 15;
-    /** The FPS label changes at most this often, so it can be read while playing. */
-    private static final int FPS_LABEL_MS = 400;
+    private static final int HTML_WIDTH = (INFO_WIDTH - 12) * 10 / 13;
+    private static final int INFO_HEIGHT = 50;
+    private static final int HEADER_HEIGHT = 38;
+    private static final int VIEW_WIDTH = 560;
+    private static final int VIEW_HEIGHT = 480;
+    private static final String HINT_COLOUR = Theme.hex(Theme.TEXT_DIM);
+    private static final String ERROR_COLOUR = Theme.hex(Theme.ERROR);
+    private static final String WARNING_COLOUR = Theme.hex(Theme.WARNING);
+    private static final String PICK_COLOUR = Theme.hex(Theme.PLANE);
+    /** The toolbar's FPS changes at most this often, so it can be read while playing. */
+    private static final int FPS_LABEL_MS = 250;
+    private static final String FPS_NO_SCAN = "FPS";
+    private static final String FPS_IDLE = "Play to measure FPS";
     /** Projections run once before timing starts, so the first number is not the JIT warming up. */
     private static final int WARM_UP_PROJECTIONS = 5;
     /** Pictures of the picture panel: the cut, then the slice views 0..2 as pictures 1..3. */
     private static final int PICTURE_CUT = 0;
     private static final int PICTURES = 4;
-    private static final Color CUT_BAR = new Color(0x2A2E36);
     private static final int DEFAULT_WIDTH = 1500;
     private static final int DEFAULT_HEIGHT = 900;
     private static final int MAX_NAME_TRIES = 999;
@@ -120,9 +129,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private int playStep = 1;
     private boolean busy;
     private int modelGeneration;
-    private final double[] recentMs = new double[FPS_SAMPLES];
-    private int recentCount;
+    private final FpsMeter fps = new FpsMeter();
     private long fpsShownAt;
+    /** The cut's buffers, reused while the plane keeps its size (every frame of the video). */
+    private Image2D cutImage;
+    private byte[] cutGrey;
 
     // ---- picking
     private String[] pickNames;
@@ -134,7 +145,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     // ---- views
     private final JFrame frame = new JFrame(TITLE);
-    private final VolumeView3D view3d = new VolumeView3D(this, CORES);
+    /** One core is left to the window: the picture, its projection and the mouse. */
+    private final VolumeView3D view3d = new VolumeView3D(this, Math.max(1, CORES - 1));
     private final SliceView cutView = new SliceView();
     private final OrthoView.Panel[] orthos = new OrthoView.Panel[3];
     private final CardLayout pictures = new CardLayout();
@@ -145,11 +157,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private int picture = PICTURE_CUT;
     private final JLabel status = new JLabel(" ");
     private final JProgressBar progress = new JProgressBar();
-    private final JLabel fpsLabel = new JLabel(" ");
+    private final Badge fpsBadge = new Badge();
 
     // ---- points editor
-    private final JRadioButton threePoints = new JRadioButton("3 points (triangle)", true);
-    private final JRadioButton fourPoints = new JRadioButton("4 points (trapezoid)");
+    private final JToggleButton threePoints = new JToggleButton("3 points (triangle)", true);
+    private final JToggleButton fourPoints = new JToggleButton("4 points (trapezoid)");
     private final JLabel[] rowNames = new JLabel[4];
     private final JTextField[][] fields = new JTextField[4][3];
     private final JButton[] pickButtons = new JButton[4];
@@ -159,7 +171,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     // ---- the video
     private final JLabel videoInfo = new JLabel(" ");
-    private final JButton playButton = new JButton("Play");
+    private final JButton playButton = new JButton("Play", Icons.play(false));
     private final JButton exportButton = new JButton("Export video...");
     private final Timer playTimer;
 
@@ -172,6 +184,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      */
     public static void launch(final File initialVolume)
     {
+        Theme.prepare();
         SwingUtilities.invokeLater(new Runnable()
         {
             @Override
@@ -179,11 +192,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             {
                 try
                 {
-                    UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                    Theme.install();
                 }
                 catch (Exception e)
                 {
-                    // The default look and feel is fine.
+                    // Swing's default look still works; the app only looks plainer.
                 }
                 StudioApp app = new StudioApp();
                 app.frame.setVisible(true);
@@ -220,32 +233,42 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         frame.setSize(new Dimension(Math.min(DEFAULT_WIDTH, screen.width), Math.min(DEFAULT_HEIGHT, screen.height)));
         frame.setLocationRelativeTo(null);
+        frame.getContentPane().setBackground(Theme.CHROME);
 
         for (int v = 0; v < 3; v++)
         {
             orthos[v] = new OrthoView.Panel(v, this, false);
         }
-        JSplitPane views = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, titled(view3d, "3-D model - cut open by the plane"),
-                buildPicturePanel());
+        JSplitPane views = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildModelPanel(), buildPicturePanel());
         views.setResizeWeight(0.5);
+        views.setContinuousLayout(true);
         views.setBorder(null);
+        views.setBackground(Theme.CHROME);
 
         JPanel controls = new ColumnPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
-        controls.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        controls.setBackground(Theme.SURFACE);
+        controls.setBorder(BorderFactory.createEmptyBorder(4, 18, 18, 18));
         controls.add(buildPointsPanel());
+        controls.add(divider());
         controls.add(buildVideoPanel());
         JScrollPane controlScroll = new JScrollPane(controls, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        controlScroll.setBorder(null);
+        controlScroll.setBorder(BorderFactory.createMatteBorder(0, 1, 0, 0, Theme.LINE));
+        controlScroll.getViewport().setBackground(Theme.SURFACE);
         controlScroll.getVerticalScrollBar().setUnitIncrement(16);
         controlScroll.setPreferredSize(new Dimension(CONTROL_WIDTH, 600));
 
-        JPanel statusBar = new JPanel(new BorderLayout(8, 0));
-        statusBar.setBorder(BorderFactory.createEmptyBorder(2, 8, 4, 8));
+        JPanel statusBar = new JPanel(new BorderLayout(12, 0));
+        statusBar.setBackground(Theme.CHROME);
+        statusBar.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.LINE),
+                BorderFactory.createEmptyBorder(5, 14, 6, 14)));
+        status.setForeground(Theme.TEXT_DIM);
+        status.setFont(Theme.font(Theme.SMALL_SIZE));
         statusBar.add(status, BorderLayout.CENTER);
         progress.setVisible(false);
         progress.setStringPainted(true);
+        progress.setPreferredSize(new Dimension(240, 16));
         statusBar.add(progress, BorderLayout.EAST);
 
         frame.getContentPane().setLayout(new BorderLayout());
@@ -267,32 +290,68 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the toolbar
+     * @return the toolbar: the app's mark, Open, the drop hint and the FPS
      */
     private JPanel buildToolbar()
     {
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 5));
-        top.add(button("Open NRRD...", new ActionListener()
+        JPanel left = new JPanel();
+        left.setLayout(new BoxLayout(left, BoxLayout.X_AXIS));
+        left.setOpaque(false);
+        JLabel name = new JLabel("Ex1", Icons.mark(), JLabel.LEFT);
+        name.setIconTextGap(9);
+        name.setFont(Theme.semibold(15));
+        name.setForeground(Theme.TEXT);
+        left.add(name);
+        left.add(Box.createHorizontalStrut(24));
+        JButton open = button("Open NRRD...", new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent e)
             {
                 chooseVolume();
             }
-        }));
+        });
+        open.setToolTipText("Open a scan from anywhere on this computer");
+        left.add(open);
+        left.add(Box.createHorizontalStrut(12));
         JLabel orDrop = new JLabel("or drop a .nrrd file anywhere on the window");
-        orDrop.setForeground(new Color(0x707070));
-        top.add(orDrop);
+        orDrop.setForeground(Theme.TEXT_FAINT);
+        left.add(orDrop);
 
-        fpsLabel.setFont(fpsLabel.getFont().deriveFont(Font.BOLD, fpsLabel.getFont().getSize2D() + 1f));
-        fpsLabel.setToolTipText("<html>How many cuts (video frames) per second the projection computes for the current plane:<br>"
-                + "nearest-neighbour sampling, one thread, drawing the views not counted.<br>"
-                + "The video itself plays and is saved at " + VIDEO_FPS + " frames per second.</html>");
-        fpsLabel.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 12));
-        JPanel bar = new JPanel(new BorderLayout());
-        bar.add(top, BorderLayout.CENTER);
-        bar.add(fpsLabel, BorderLayout.EAST);
+        fpsBadge.setToolTipText("<html>FPS: how many frames (cuts) per second this computer computes:<br>"
+                + "the assignment's projection, nearest neighbour, one thread.<br>"
+                + "Measured on the frames of the video while it plays, and written on every frame<br>"
+                + "of an exported video. The video itself plays and is saved at " + VIDEO_FPS + " fps.</html>");
+        showFpsIdle();
+        JPanel bar = new JPanel(new BorderLayout(12, 0));
+        bar.setBackground(Theme.CHROME);
+        bar.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.LINE),
+                BorderFactory.createEmptyBorder(8, 16, 8, 14)));
+        bar.add(left, BorderLayout.CENTER);
+        bar.add(fpsBadge, BorderLayout.EAST);
         return bar;
+    }
+
+    /**
+     * @return the 3-D view under its header
+     */
+    private JPanel buildModelPanel()
+    {
+        JLabel title = new JLabel("3-D model, cut open by the plane");
+        title.setFont(Theme.semibold(Theme.TEXT_SIZE));
+        title.setForeground(Theme.TEXT);
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Theme.CHROME);
+        header.setBorder(headerBorder(Theme.CHROME));
+        header.setPreferredSize(new Dimension(10, HEADER_HEIGHT));
+        header.add(title, BorderLayout.CENTER);
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Theme.WELL);
+        // The same preferred width as the picture panel: the two views start half and half.
+        p.setPreferredSize(new Dimension(VIEW_WIDTH, VIEW_HEIGHT));
+        p.add(header, BorderLayout.NORTH);
+        p.add(view3d, BorderLayout.CENTER);
+        return p;
     }
 
     /**
@@ -326,18 +385,22 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 flipPicture(1);
             }
         });
-        pictureTitle.setForeground(Color.WHITE);
-        pictureTitle.setFont(pictureTitle.getFont().deriveFont(Font.BOLD));
-        pictureCount.setForeground(new Color(0xE6E6E6));
-        JPanel middle = new JPanel(new BorderLayout());
+        pictureTitle.setForeground(Theme.TEXT);
+        pictureTitle.setFont(Theme.semibold(Theme.TEXT_SIZE));
+        pictureCount.setForeground(Theme.TEXT_DIM);
+        pictureCount.setFont(Theme.font(Theme.SMALL_SIZE));
+        JPanel middle = new JPanel(new BorderLayout(10, 0));
         middle.setOpaque(false);
         middle.add(pictureTitle, BorderLayout.CENTER);
         middle.add(pictureCount, BorderLayout.EAST);
-        pictureBar.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
+        pictureBar.setBackground(Theme.CHROME);
+        pictureBar.setPreferredSize(new Dimension(10, HEADER_HEIGHT));
         pictureBar.add(previous, BorderLayout.WEST);
         pictureBar.add(middle, BorderLayout.CENTER);
         pictureBar.add(next, BorderLayout.EAST);
         JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Theme.WELL);
+        p.setPreferredSize(new Dimension(VIEW_WIDTH, VIEW_HEIGHT));
         p.add(pictureBar, BorderLayout.NORTH);
         p.add(pictureCards, BorderLayout.CENTER);
         showPicture(PICTURE_CUT);
@@ -345,15 +408,25 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the "plane by points" editor
+     * @return the "plane by points" editor: step 1 of the control column
      */
     private JPanel buildPointsPanel()
     {
         JPanel p = new JPanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder("1. The plane - choose 3 points (or 4)"));
+        p.setOpaque(false);
         GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(1, 3, 1, 3);
         g.anchor = GridBagConstraints.WEST;
+        g.gridx = 0;
+        g.gridy = 0;
+        g.gridwidth = 5;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.insets = new Insets(12, 0, 2, 0);
+        p.add(sectionTitle(1, "The plane"), g);
+        g.gridy = 1;
+        g.insets = new Insets(0, 29, 12, 0);
+        p.add(caption("Choose 3 points, or 4 for a trapezoid."), g);
+
         ButtonGroup shape = new ButtonGroup();
         shape.add(threePoints);
         shape.add(fourPoints);
@@ -367,20 +440,30 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         };
         threePoints.addActionListener(onShape);
         fourPoints.addActionListener(onShape);
-        JPanel shapeRow = new JPanel(new GridLayout(1, 2, 2, 0));
+        threePoints.putClientProperty(Theme.VARIANT, Theme.SEGMENT_FIRST);
+        fourPoints.putClientProperty(Theme.VARIANT, Theme.SEGMENT_LAST);
+        threePoints.setToolTipText("The plane of the assignment: an isosceles triangle a, b, c");
+        fourPoints.setToolTipText("An isosceles trapezoid a1, a2, b, c");
+        JPanel shapeRow = new JPanel(new GridLayout(1, 2, 0, 0));
+        shapeRow.setOpaque(false);
         shapeRow.add(threePoints);
         shapeRow.add(fourPoints);
-        g.gridx = 0;
-        g.gridy = 0;
-        g.gridwidth = 5;
+        g.gridy = 2;
+        g.insets = new Insets(0, 0, 12, 0);
         p.add(shapeRow, g);
+
         g.gridwidth = 1;
-        g.gridy = 1;
+        g.weightx = 0;
+        g.gridy = 3;
+        g.insets = new Insets(0, 3, 3, 3);
         String[] heads = {"", "x", "y", "z", ""};
         for (int c = 0; c < heads.length; c++)
         {
             g.gridx = c;
-            p.add(new JLabel(heads[c]), g);
+            JLabel head = new JLabel(heads[c], JLabel.CENTER);
+            head.setForeground(Theme.TEXT_FAINT);
+            head.setFont(Theme.font(Theme.SMALL_SIZE));
+            p.add(head, g);
         }
         ActionListener apply = new ActionListener()
         {
@@ -390,12 +473,15 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 applyPointFields();
             }
         };
+        g.insets = new Insets(3, 3, 3, 3);
         for (int r = 0; r < 4; r++)
         {
-            g.gridy = 2 + r;
+            g.gridy = 4 + r;
             g.gridx = 0;
             rowNames[r] = new JLabel("a");
-            rowNames[r].setFont(rowNames[r].getFont().deriveFont(Font.BOLD));
+            rowNames[r].setFont(Theme.semibold(Theme.TEXT_SIZE));
+            rowNames[r].setForeground(Theme.PLANE);
+            rowNames[r].setPreferredSize(new Dimension(22, 20));
             p.add(rowNames[r], g);
             for (int c = 0; c < 3; c++)
             {
@@ -408,8 +494,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             }
             g.gridx = 4;
             final int row = r;
-            pickButtons[r] = new JButton("pick");
-            pickButtons[r].setMargin(new Insets(1, 6, 1, 6));
+            pickButtons[r] = new JButton("Pick");
+            pickButtons[r].setMargin(new Insets(5, 11, 5, 11));
             pickButtons[r].setToolTipText("Click this point on the 3-D model or on a slice view");
             pickButtons[r].addActionListener(new ActionListener()
             {
@@ -422,7 +508,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             p.add(pickButtons[r], g);
         }
         // The fix button only shows while the plane is doubtful (see showPointsInfo).
-        JPanel buttons = new JPanel(new BorderLayout(3, 0));
+        JPanel buttons = new JPanel(new BorderLayout(8, 0));
+        buttons.setOpaque(false);
         pickAll.setToolTipText("Click the points one after the other on the 3-D model or the slice views");
         pickAll.addActionListener(new ActionListener()
         {
@@ -456,15 +543,18 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         buttons.add(small(pickAll), BorderLayout.CENTER);
         buttons.add(small(fixButton), BorderLayout.EAST);
         g.gridx = 0;
-        g.gridy = 6;
+        g.gridy = 8;
         g.gridwidth = 5;
         g.fill = GridBagConstraints.HORIZONTAL;
+        g.insets = new Insets(10, 0, 8, 0);
         p.add(buttons, g);
-        g.gridy = 7;
-        pointsInfo.setFont(pointsInfo.getFont().deriveFont(Font.PLAIN, 11f));
+        g.gridy = 9;
+        g.insets = new Insets(0, 0, 0, 0);
+        pointsInfo.setFont(Theme.font(Theme.SMALL_SIZE));
+        pointsInfo.setForeground(Theme.TEXT_DIM);
         // Fixed size: a long message must wrap, not widen the panel (which would squeeze the fields).
-        pointsInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
-        pointsInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
+        pointsInfo.setPreferredSize(new Dimension(INFO_WIDTH, INFO_HEIGHT));
+        pointsInfo.setMinimumSize(new Dimension(INFO_WIDTH, INFO_HEIGHT));
         pointsInfo.setVerticalAlignment(JLabel.TOP);
         p.add(pointsInfo, g);
         showPointRows();
@@ -475,20 +565,29 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      * The video: Play shows it, Export saves it. It is the chosen plane moved through the whole
      * scan, so it is ready as soon as a scan is open - nothing is collected by hand.
      *
-     * @return the video panel
+     * @return the video panel: step 2 of the control column
      */
     private JPanel buildVideoPanel()
     {
-        JPanel p = new JPanel(new BorderLayout(0, 4));
-        p.setBorder(BorderFactory.createTitledBorder("2. The video"));
-        videoInfo.setFont(videoInfo.getFont().deriveFont(Font.PLAIN, 11f));
-        videoInfo.setPreferredSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
-        videoInfo.setMinimumSize(new Dimension(CONTROL_WIDTH - 60, INFO_HEIGHT));
-        videoInfo.setVerticalAlignment(JLabel.TOP);
-        p.add(videoInfo, BorderLayout.NORTH);
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setOpaque(false);
+        GridBagConstraints g = new GridBagConstraints();
+        g.anchor = GridBagConstraints.WEST;
+        g.gridx = 0;
+        g.gridy = 0;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.insets = new Insets(12, 0, 2, 0);
+        p.add(sectionTitle(2, "The video"), g);
+        g.gridy = 1;
+        g.insets = new Insets(0, 29, 12, 0);
+        p.add(caption("The plane moving through the whole scan."), g);
 
-        JPanel run = new JPanel(new GridLayout(1, 2, 6, 0));
-        run.setBorder(BorderFactory.createEmptyBorder(0, 3, 3, 3));
+        JPanel run = new JPanel(new GridLayout(1, 2, 8, 0));
+        run.setOpaque(false);
+        playButton.putClientProperty(Theme.VARIANT, Theme.PRIMARY);
+        playButton.setFont(Theme.semibold(Theme.TEXT_SIZE));
+        playButton.setIconTextGap(8);
         playButton.setToolTipText("Plays the video in the views, back and forth, at " + VIDEO_FPS + " frames per second");
         playButton.addActionListener(new ActionListener()
         {
@@ -499,7 +598,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             }
         });
         exportButton.setToolTipText("Saves the video (one pass, first frame to last) as an MP4 file");
-        exportButton.setFont(exportButton.getFont().deriveFont(Font.BOLD));
         exportButton.addActionListener(new ActionListener()
         {
             @Override
@@ -510,27 +608,75 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         });
         run.add(playButton);
         run.add(exportButton);
-        run.setPreferredSize(new Dimension(CONTROL_WIDTH - 40, 34));
-        p.add(run, BorderLayout.CENTER);
+        run.setPreferredSize(new Dimension(INFO_WIDTH, 36));
+        g.gridy = 2;
+        g.insets = new Insets(0, 0, 10, 0);
+        p.add(run, g);
+
+        videoInfo.setFont(Theme.font(Theme.SMALL_SIZE));
+        videoInfo.setForeground(Theme.TEXT_DIM);
+        videoInfo.setPreferredSize(new Dimension(INFO_WIDTH, INFO_HEIGHT + 16));
+        videoInfo.setMinimumSize(new Dimension(INFO_WIDTH, INFO_HEIGHT + 16));
+        videoInfo.setVerticalAlignment(JLabel.TOP);
+        g.gridy = 3;
+        g.insets = new Insets(0, 0, 0, 0);
+        p.add(videoInfo, g);
         return p;
     }
 
     /**
-     * @param (Component) c a view
-     * @param (String) title its caption
-     * @return the view with a small title bar
+     * @param (int) step its number in the order of work
+     * @param (String) title what the section is about
+     * @return a section title: the number in an amber ring, then the title
      */
-    private static JPanel titled(Component c, String title)
+    private static JLabel sectionTitle(int step, String title)
     {
-        JPanel p = new JPanel(new BorderLayout());
-        JLabel l = new JLabel(" " + title);
-        l.setOpaque(true);
-        l.setBackground(CUT_BAR);
-        l.setForeground(new Color(0xE6E6E6));
-        l.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
-        p.add(l, BorderLayout.NORTH);
-        p.add(c, BorderLayout.CENTER);
-        return p;
+        JLabel l = new JLabel(title, Icons.step(step), JLabel.LEFT);
+        l.setIconTextGap(9);
+        l.setFont(Theme.semibold(14));
+        l.setForeground(Theme.TEXT);
+        return l;
+    }
+
+    /**
+     * @param (String) text one short line under a section title
+     * @return the line, dim
+     */
+    private static JLabel caption(String text)
+    {
+        JLabel l = new JLabel(text);
+        l.setFont(Theme.font(Theme.SMALL_SIZE));
+        l.setForeground(Theme.TEXT_DIM);
+        return l;
+    }
+
+    /**
+     * @return a thin line between the sections of the control column
+     */
+    private static JComponent divider()
+    {
+        JPanel line = new JPanel();
+        line.setBackground(Theme.LINE);
+        line.setPreferredSize(new Dimension(10, 1));
+        JPanel box = new JPanel(new BorderLayout());
+        box.setOpaque(false);
+        box.setBorder(BorderFactory.createEmptyBorder(14, 0, 4, 0));
+        box.add(line, BorderLayout.CENTER);
+        box.setMaximumSize(new Dimension(Integer.MAX_VALUE, 19));
+        return box;
+    }
+
+    /**
+     * @param (Color) accent colour of the line on top: which picture it is (the plane's amber for
+     *        the cut, the view's colour for a slice view)
+     * @return the border of a view's header strip
+     */
+    private static Border headerBorder(Color accent)
+    {
+        Border top = BorderFactory.createMatteBorder(2, 0, 0, 0, accent);
+        Border bottom = BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.LINE);
+        Border pad = BorderFactory.createEmptyBorder(0, 12, 0, 6);
+        return BorderFactory.createCompoundBorder(top, BorderFactory.createCompoundBorder(bottom, pad));
     }
 
     /**
@@ -540,12 +686,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      */
     private static JButton arrowButton(boolean right, String tip)
     {
-        JButton b = new JButton(new ArrowIcon(right));
+        JButton b = new JButton(Icons.arrow(right));
+        b.putClientProperty(Theme.VARIANT, Theme.GHOST);
         b.setToolTipText(tip);
-        b.setBorderPainted(false);
-        b.setContentAreaFilled(false);
-        b.setFocusPainted(false);
-        b.setMargin(new Insets(2, 10, 2, 10));
+        b.setMargin(new Insets(5, 8, 5, 8));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
     }
@@ -568,17 +712,17 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     {
         picture = which;
         pictures.show(pictureCards, Integer.toString(which));
-        Color bar = CUT_BAR;
-        String title = "The cut - one frame of the video";
+        Color accent = Theme.PLANE;
+        String title = "The cut, one frame of the video";
         if (which != PICTURE_CUT)
         {
             int view = which - 1;
-            bar = OrthoView.VIEW_COLOURS[view].darker();
-            title = VolumeGeometry.name(view) + " - " + VolumeGeometry.hint(view);
+            accent = OrthoView.VIEW_COLOURS[view];
+            title = VolumeGeometry.name(view) + ", " + VolumeGeometry.hint(view);
         }
-        pictureBar.setBackground(bar);
+        pictureBar.setBorder(headerBorder(accent));
         pictureTitle.setText(title);
-        pictureCount.setText((which + 1) + " / " + PICTURES + "  ");
+        pictureCount.setText((which + 1) + " of " + PICTURES);
     }
 
     // ------------------------------------------------------------------ volume
@@ -657,11 +801,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                         orthos[v].sync();
                     }
                     sliceChanged(0);
-                    recentCount = 0;
                     warmUp(PlaneSpec.triangle(volume).toPlane());
                     applySpec(PlaneSpec.triangle(volume));
                     view3d.lookAtPlane(plane);
                     showPicture(PICTURE_CUT);
+                    showFpsIdle();
                     buildModel();
                     updateEnabled();
                 }
@@ -708,7 +852,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 try
                 {
                     view3d.setModel(get());
-                    measureSpeed();
                     updateEnabled();
                 }
                 catch (ExecutionException e)
@@ -725,8 +868,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * Projects a plane a few times, untimed, so the FPS shown from the first cut on is the
-     * algorithm's speed and not the Java compiler warming up.
+     * Projects a plane a few times, untimed, so the FPS measured on the first frames of the video
+     * is the algorithm's speed and not the Java compiler warming up.
      *
      * @param (Plane) p a plane of the new volume
      */
@@ -835,23 +978,32 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             show(fixButton, false);
             if (pickIndex < 0)
             {
-                pointsInfo.setText(html("Bad plane (a black frame in the video): " + bad, "#c03030"));
+                pointsInfo.setText(html("Bad plane (a black frame in the video): " + bad, ERROR_COLOUR));
             }
             updateVideoInfo();
             return;
         }
+        int w = plane.imageWidth();
+        int h = plane.imageHeight();
+        if (cutImage == null || cutImage.width() != w || cutImage.height() != h)
+        {
+            cutImage = new Image2D(w, h);
+            cutGrey = new byte[w * h];
+        }
         long t0 = System.nanoTime();
-        Image2D img = projector.project(volume, plane);
-        noteProjectionTime((System.nanoTime() - t0) / NANOS_PER_MS);
-        int w = img.width();
-        int h = img.height();
-        byte[] grey = new byte[w * h];
-        window.toGrey(img, grey, w, h, w, h);
-        cutView.setImage(grey, w, h, framePrefix() + w + " x " + h + " pixels");
+        projector.project(volume, plane, cutImage);
+        long nanos = System.nanoTime() - t0;
+        window.toGrey(cutImage, cutGrey, w, h, w, h);
+        noteProjectionTime(nanos);
+        cutView.setImage(cutGrey, w, h, framePrefix() + w + " x " + h + " pixels");
         cutView.setCornerLabels(plane.isTriangle());
         view3d.setPlane(plane, pts, names);
         showPointsInfo(plane.validate(Plane.DEFAULT_EPS));
-        updateVideoInfo();
+        if (!playTimer.isRunning())
+        {
+            // While playing the plane only slides along its normal: the video stays the same.
+            updateVideoInfo();
+        }
         updateStatus();
     }
 
@@ -884,61 +1036,45 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             pointsInfo.setText(html("Type the points and press Enter, or pick them with the mouse on the views.", HINT_COLOUR));
             return;
         }
-        pointsInfo.setText(html("Not isosceles (drawn as given): " + problems.get(0) + ".", "#b06000"));
+        pointsInfo.setText(html("Not isosceles (drawn as given): " + problems.get(0) + ".", WARNING_COLOUR));
     }
 
     /**
-     * Records how long one projection took and, now and then, shows the speed in the toolbar.
+     * While the video plays, a frame's projection time joins the FPS (ADR-0014): shown on the
+     * picture every frame, as in the exported video, and in the toolbar a few times a second, so
+     * it can be read. A still picture is not measured: there is no frame rate to speak of.
      *
-     * @param (double) ms projection time of one frame in milliseconds
+     * @param (long) nanos projection time of the frame just shown
      */
-    private void noteProjectionTime(double ms)
+    private void noteProjectionTime(long nanos)
     {
-        recentMs[recentCount % FPS_SAMPLES] = ms;
-        recentCount++;
+        if (!playTimer.isRunning())
+        {
+            return;
+        }
+        fps.add(nanos);
+        String text = fps.text();
+        cutView.setFps(text);
         long now = System.currentTimeMillis();
-        if (now - fpsShownAt < FPS_LABEL_MS && recentCount > 1)
+        if (now - fpsShownAt >= FPS_LABEL_MS || !fpsBadge.isLive())
         {
-            return;
+            fpsShownAt = now;
+            fpsBadge.show(text, true);
         }
-        fpsShownAt = now;
-        showFps();
     }
 
-    /** Shows the median of the recent projection times as frames per second. */
-    private void showFps()
+    /** Nothing plays: the toolbar says how to measure the FPS, the picture shows none. */
+    private void showFpsIdle()
     {
-        int n = Math.min(recentCount, FPS_SAMPLES);
-        if (n == 0)
+        if (volume == null)
         {
-            return;
+            fpsBadge.show(FPS_NO_SCAN, false);
         }
-        double[] sorted = Arrays.copyOf(recentMs, n);
-        Arrays.sort(sorted);
-        double median = sorted[n / 2];
-        fpsLabel.setText(String.format(Locale.ROOT, "Projection: %.0f FPS", 1000.0 / Math.max(median, 1e-3)));
-    }
-
-    /**
-     * Times the current plane again once the 3-D model is built: while a scan loads, building
-     * the model takes the cores and the first number would be far too low.
-     */
-    private void measureSpeed()
-    {
-        if (volume == null || plane == null || !plane.isRenderable())
+        else
         {
-            return;
+            fpsBadge.show(FPS_IDLE, false);
         }
-        recentCount = 0;
-        for (int i = 0; i < FPS_SAMPLES; i++)
-        {
-            long t0 = System.nanoTime();
-            projector.project(volume, plane);
-            recentMs[recentCount % FPS_SAMPLES] = (System.nanoTime() - t0) / NANOS_PER_MS;
-            recentCount++;
-        }
-        fpsShownAt = System.currentTimeMillis();
-        showFps();
+        cutView.setFps(null);
     }
 
     // ------------------------------------------------------------------ points editor
@@ -1000,7 +1136,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             p[r] = readRow(r);
             if (p[r] == null)
             {
-                pointsInfo.setText(html("Point " + rowNames[r].getText() + ": type three numbers", "#c03030"));
+                pointsInfo.setText(html("Point " + rowNames[r].getText() + ": type three numbers", ERROR_COLOUR));
                 return;
             }
         }
@@ -1116,7 +1252,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     private void promptPick()
     {
         pointsInfo.setText(html("Click point " + pickNames[pickIndex] + " on the 3-D model or on the slice picture"
-                + " (its arrows change the view, its slider the slice).", "#c06000"));
+                + " (its arrows change the view, its slider the slice).", PICK_COLOUR));
     }
 
     /**
@@ -1304,7 +1440,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         playSequence = pass.planes;
         playIndex = pass.current;
         playStep = 1;
+        fps.reset();
         playButton.setText("Stop");
+        playButton.setIcon(Icons.play(true));
         playTimer.start();
         stepPlayback();
     }
@@ -1318,6 +1456,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         playTimer.stop();
         playButton.setText("Play");
+        playButton.setIcon(Icons.play(false));
+        showFpsIdle();
         // Redraw the last frame without its frame number.
         if (plane != null)
         {
@@ -1372,11 +1512,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         stopPlay();
         stopPicking();
         final List<Plane> planes = videoPass().planes;
-        final Projector exportProjector = Projector.create(Projector.Interpolation.NEAREST, CORES);
+        // One thread, as while playing: the FPS written on the frames is the same measure.
+        final Projector exportProjector = Projector.create(Projector.Interpolation.NEAREST);
         final FrameRenderer renderer;
         try
         {
             renderer = new FrameRenderer(volume, planes, window, exportProjector);
+            renderer.setShowFps(true);
         }
         catch (IllegalArgumentException e)
         {
@@ -1397,6 +1539,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         progress.setVisible(true);
         SwingWorker<String, Integer> worker = new SwingWorker<String, Integer>()
         {
+            private final long[] frameNanos = new long[renderer.frameCount()];
+            private int projected;
+
             @Override
             protected String doInBackground() throws Exception
             {
@@ -1424,11 +1569,17 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
              */
             private void writeAll(VideoWriter out) throws IOException
             {
+                projected = 0;
                 try
                 {
                     for (int i = 0; i < renderer.frameCount(); i++)
                     {
                         out.writeFrame(renderer.render(i));
+                        if (renderer.lastProjectionNanos() > 0)
+                        {
+                            frameNanos[projected] = renderer.lastProjectionNanos();
+                            projected++;
+                        }
                         publish(Integer.valueOf(i + 1));
                     }
                 }
@@ -1453,10 +1604,16 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 try
                 {
                     String note = get();
+                    String speed = "";
+                    if (projected > 0)
+                    {
+                        speed = "\nThe projection ran at " + FpsMeter.format(FpsMeter.fpsOf(frameNanos, projected))
+                                + " (the median frame, one thread); each frame shows its FPS in the corner.";
+                    }
                     int answer = JOptionPane.showConfirmDialog(frame,
                             "Saved " + renderer.frameCount() + " frames (" + renderer.width() + " x " + renderer.height()
                                     + " pixels, " + seconds(renderer.frameCount()) + " s at " + VIDEO_FPS + " fps) to\n"
-                                    + target.getAbsolutePath() + note + "\n\nOpen the video now?",
+                                    + target.getAbsolutePath() + speed + note + "\n\nOpen the video now?",
                             "Export finished", JOptionPane.YES_NO_OPTION);
                     if (answer == JOptionPane.YES_OPTION)
                     {
@@ -1610,8 +1767,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return;
         }
         int frames = Sweep.through(plane, volume.sizeX(), volume.sizeY(), volume.sizeZ()).planes.size();
-        videoInfo.setText(html("Video = the plane moving through the whole scan: " + frames + " frames, " + seconds(frames)
-                + " s at " + VIDEO_FPS + " fps. Play runs it back and forth, Export saves it once.", null));
+        videoInfo.setText(html(frames + " frames, " + seconds(frames) + " s at " + VIDEO_FPS + " fps. Play runs it back and"
+                + " forth and shows the FPS; Export saves it once, with the FPS on every frame.", HINT_COLOUR));
     }
 
     /**
@@ -1753,6 +1910,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         playButton.setEnabled(haveVolume);
         exportButton.setEnabled(haveVolume);
         pickAll.setEnabled(haveVolume);
+        for (int r = 0; r < pickButtons.length; r++)
+        {
+            pickButtons[r].setEnabled(haveVolume);
+        }
         updateVideoInfo();
         updateStatus();
     }
@@ -1810,7 +1971,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      */
     private static JButton small(JButton b)
     {
-        b.setMargin(new Insets(2, 4, 2, 4));
+        b.setMargin(new Insets(6, 10, 6, 10));
         return b;
     }
 
@@ -1907,49 +2068,6 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             return t.getClass().getSimpleName();
         }
         return t.getMessage();
-    }
-
-    /** A filled triangle pointing left or right: drawn, so no font needs an arrow glyph. */
-    private static final class ArrowIcon implements Icon
-    {
-        private static final int SIZE = 16;
-        private final boolean right;
-
-        /**
-         * @param (boolean) right true points right
-         */
-        ArrowIcon(boolean right)
-        {
-            this.right = right;
-        }
-
-        @Override
-        public void paintIcon(Component c, Graphics g0, int x, int y)
-        {
-            Graphics2D g = (Graphics2D) g0.create();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setColor(Color.WHITE);
-            int[] xs = {x + SIZE - 4, x + 3, x + SIZE - 4};
-            if (right)
-            {
-                xs = new int[] {x + 4, x + SIZE - 3, x + 4};
-            }
-            int[] ys = {y + 1, y + SIZE / 2, y + SIZE - 1};
-            g.fillPolygon(xs, ys, 3);
-            g.dispose();
-        }
-
-        @Override
-        public int getIconWidth()
-        {
-            return SIZE;
-        }
-
-        @Override
-        public int getIconHeight()
-        {
-            return SIZE;
-        }
     }
 
     /** The control column: as wide as the scroll pane, only scrolls vertically. */
