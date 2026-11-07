@@ -22,26 +22,37 @@ import java.util.List;
  */
 public final class Plane
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** How much two lengths may differ and still count as equal (the assignment's EPS). */
     public static final double DEFAULT_EPS = 0.001;
 
     /** Larger sides cannot come from a volume below 1024^3 and would exhaust memory. */
     public static final double MAX_IMAGE_SIDE = 8192;
 
-    private static final int TRIANGLE_VALUES = 9;
+    /** Numbers that make a triangle and a trapezoid. */
+    private static final int TRIANGLE_VALUES  = 9;
     private static final int TRAPEZOID_VALUES = 12;
 
+    /** The two rails: a1 to b on the left, a2 to c on the right (a triangle has a1 = a2 = a). */
     private final Vec3 a1;
     private final Vec3 a2;
     private final Vec3 b;
     private final Vec3 c;
+
+    /** True when the plane is a triangle. */
     private final boolean triangle;
 
     /**
-     * @param (Vec3) a1 start of the left rail
-     * @param (Vec3) a2 start of the right rail
-     * @param (Vec3) b end of the left rail
-     * @param (Vec3) c end of the right rail
-     * @param (boolean) triangle true when built from three points
+     * Creates a plane from its two rails.
+     * @param (Vec3) a1 Start of the left rail.
+     * @param (Vec3) a2 Start of the right rail.
+     * @param (Vec3) b End of the left rail.
+     * @param (Vec3) c End of the right rail.
+     * @param (boolean) triangle True when built from three points.
      */
     private Plane(Vec3 a1, Vec3 a2, Vec3 b, Vec3 c, boolean triangle)
     {
@@ -53,10 +64,11 @@ public final class Plane
     }
 
     /**
-     * @param (Vec3) a apex
-     * @param (Vec3) b end of the left side
-     * @param (Vec3) c end of the right side
-     * @return triangle plane (a, b, c)
+     * Makes a triangle: both rails start at the apex.
+     * @param (Vec3) a Apex.
+     * @param (Vec3) b End of the left side.
+     * @param (Vec3) c End of the right side.
+     * @return (Plane) Triangle plane (a, b, c).
      */
     public static Plane triangle(Vec3 a, Vec3 b, Vec3 c)
     {
@@ -64,11 +76,12 @@ public final class Plane
     }
 
     /**
-     * @param (Vec3) a1 start of the left rail
-     * @param (Vec3) a2 start of the right rail
-     * @param (Vec3) b end of the left rail
-     * @param (Vec3) c end of the right rail
-     * @return trapezoid plane (a1, a2, b, c)
+     * Makes a trapezoid from its two rails.
+     * @param (Vec3) a1 Start of the left rail.
+     * @param (Vec3) a2 Start of the right rail.
+     * @param (Vec3) b End of the left rail.
+     * @param (Vec3) c End of the right rail.
+     * @return (Plane) Trapezoid plane (a1, a2, b, c).
      */
     public static Plane trapezoid(Vec3 a1, Vec3 a2, Vec3 b, Vec3 c)
     {
@@ -77,9 +90,8 @@ public final class Plane
 
     /**
      * Builds a plane from 9 (triangle) or 12 (trapezoid) coordinates, as in one CSV row.
-     *
-     * @param (double[]) v coordinates x,y,z of each point in order
-     * @return the plane
+     * @param (double[]) v Coordinates x,y,z of each point in order.
+     * @return (Plane) The plane.
      */
     public static Plane fromValues(double[] v)
     {
@@ -94,17 +106,20 @@ public final class Plane
         throw new IllegalArgumentException("expected 9 or 12 numbers, got " + v.length);
     }
 
+    // ==========================================
+    //            RULES AND IMAGE SIZE
+    // ==========================================
+
     /**
      * Checks the conditions of ALGORITHM.md §6.
-     *
-     * @param (double) eps geometric tolerance
-     * @return list of problems; empty when the plane is valid
+     * @param (double) eps Geometric tolerance.
+     * @return (List<String>) List of problems; empty when the plane is valid.
      */
     public List<String> validate(double eps)
     {
         List<String> errors = new ArrayList<String>();
-        double left = a1.dist(b);
-        double right = a2.dist(c);
+        double       left   = a1.dist(b);
+        double       right  = a2.dist(c);
         if (!isFinite())
         {
             errors.add("coordinates must be finite numbers");
@@ -156,9 +171,8 @@ public final class Plane
     }
 
     /**
-     * Why the algorithm cannot draw this plane at all (a "bad" plane, black frame).
-     *
-     * @return the reason, or null when the plane is renderable
+     * Says why the algorithm cannot draw this plane at all (a "bad" plane, black frame).
+     * @return (String) The reason, or null when the plane is renderable.
      */
     public String whyNotRenderable()
     {
@@ -166,7 +180,7 @@ public final class Plane
         {
             return "coordinates must be finite numbers";
         }
-        double left = a1.dist(b);
+        double left  = a1.dist(b);
         double right = a2.dist(c);
         if (left <= 0.0 || right <= 0.0)
         {
@@ -207,9 +221,9 @@ public final class Plane
     }
 
     /**
-     * Output image height: one row per unit step along the rail, both ends included (decision D1, D5).
-     *
-     * @return number of rows
+     * Gives the output image height: one row per unit step along the rail, both ends included
+     * (decision D1, D5).
+     * @return (int) Number of rows.
      */
     public int imageHeight()
     {
@@ -217,39 +231,43 @@ public final class Plane
     }
 
     /**
-     * Output image width: longest row, one pixel per unit step, both ends included (decision D5).
-     *
-     * @return number of columns
+     * Gives the output image width: the longest row, one pixel per unit step, both ends included
+     * (decision D5).
+     * @return (int) Number of columns.
      */
     public int imageWidth()
     {
         // The distance between the rails is convex in y, so the widest row is the first or the
         // last one. Using the rails (not |bc|) keeps rows inside E even when the input is not
         // isosceles and the right rail overshoots or falls short of c.
-        int last = imageHeight() - 1;
-        Vec3 v1 = b.sub(a1).normalized();
-        Vec3 v2 = c.sub(a2).normalized();
-        double top = a1.dist(a2);
+        int    last   = imageHeight() - 1;
+        Vec3   v1     = b.sub(a1).normalized();
+        Vec3   v2     = c.sub(a2).normalized();
+        double top    = a1.dist(a2);
         double bottom = a1.add(v1.scale(last)).dist(a2.add(v2.scale(last)));
         double widest = Math.max(Math.max(top, bottom), b.dist(c));
         return (int) Math.floor(widest) + 1;
     }
 
     /**
-     * Whether the projection algorithm can draw this plane: finite coordinates, rails longer than
-     * 0, a real plane (not collinear, four points coplanar, sides not crossing) and an output
-     * image of sane size. A plane can be renderable without being valid (e.g. not isosceles);
-     * then the algorithm still has a well-defined result and the plane is drawn as given.
-     *
-     * @return true when project() may be called
+     * Tells whether the projection algorithm can draw this plane: finite coordinates, rails longer
+     * than 0, a real plane (not collinear, four points coplanar, sides not crossing) and an output
+     * image of sane size. A plane can be renderable without being valid (e.g. not isosceles); then
+     * the algorithm still has a well-defined result and the plane is drawn as given.
+     * @return (boolean) True when project() may be called.
      */
     public boolean isRenderable()
     {
         return whyNotRenderable() == null;
     }
 
+    // ==========================================
+    //                   POINTS
+    // ==========================================
+
     /**
-     * @return start of the left rail (apex for a triangle)
+     * Gives the start of the left rail.
+     * @return (Vec3) Start of the left rail (apex for a triangle).
      */
     public Vec3 a1()
     {
@@ -257,7 +275,8 @@ public final class Plane
     }
 
     /**
-     * @return start of the right rail (apex for a triangle)
+     * Gives the start of the right rail.
+     * @return (Vec3) Start of the right rail (apex for a triangle).
      */
     public Vec3 a2()
     {
@@ -265,7 +284,8 @@ public final class Plane
     }
 
     /**
-     * @return end of the left rail
+     * Gives the end of the left rail.
+     * @return (Vec3) End of the left rail.
      */
     public Vec3 b()
     {
@@ -273,7 +293,8 @@ public final class Plane
     }
 
     /**
-     * @return end of the right rail
+     * Gives the end of the right rail.
+     * @return (Vec3) End of the right rail.
      */
     public Vec3 c()
     {
@@ -281,13 +302,18 @@ public final class Plane
     }
 
     /**
-     * @return true when the plane was given by three points
+     * Tells whether the plane is a triangle.
+     * @return (boolean) True when the plane was given by three points.
      */
     public boolean isTriangle()
     {
         return triangle;
     }
 
+    /**
+     * Describes the plane for messages and tests.
+     * @return (String) Its shape and points.
+     */
     @Override
     public String toString()
     {
@@ -298,10 +324,15 @@ public final class Plane
         return "Trapezoid[a1=" + a1 + ", a2=" + a2 + ", b=" + b + ", c=" + c + "]";
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (double[]) v flat coordinates
-     * @param (int) i point number
-     * @return i-th point
+     * Reads point number i from a flat array of coordinates.
+     * @param (double[]) v Flat coordinates.
+     * @param (int) i Point number.
+     * @return (Vec3) Point number i.
      */
     private static Vec3 point(double[] v, int i)
     {
@@ -309,10 +340,9 @@ public final class Plane
     }
 
     /**
-     * Distance of c from the plane through a1, a2, b. When a1, a2, b are collinear the
+     * Measures the distance of c from the plane through a1, a2, b. When a1, a2, b are collinear the
      * plane is spanned by a1->b and a2->c directly instead.
-     *
-     * @return distance in voxel units
+     * @return (double) Distance in voxel units.
      */
     private double distanceOfCFromPlane()
     {
@@ -327,10 +357,10 @@ public final class Plane
     }
 
     /**
-     * A trapezoid is a simple quadrilateral: its two rails must not intersect. Tested in the 2-D
-     * coordinates of the plane itself (axes: bottom edge direction and its in-plane normal).
-     *
-     * @return true when segment a1->b intersects segment a2->c
+     * Tests whether the rails cross: a trapezoid is a simple quadrilateral, its rails must not
+     * intersect. Tested in the 2-D coordinates of the plane itself (axes: bottom edge direction and
+     * its in-plane normal).
+     * @return (boolean) True when segment a1->b intersects segment a2->c.
      */
     private boolean railsCross()
     {
@@ -347,10 +377,9 @@ public final class Plane
     }
 
     /**
-     * The top a1-a2 and the base b-c of a trapezoid must not cross either (a "bow-tie" whose
-     * rails do not touch but whose bases do).
-     *
-     * @return true when segment a1->a2 intersects segment b->c
+     * Tests whether the top a1-a2 and the base b-c of a trapezoid cross; they must not either (a
+     * "bow-tie" whose rails do not touch but whose bases do).
+     * @return (boolean) True when segment a1->a2 intersects segment b->c.
      */
     private boolean topAndBaseCross()
     {
@@ -367,20 +396,19 @@ public final class Plane
     }
 
     /**
-     * How far a2 is from the parallel to the base through a1, measured in the plane: 0 for a real
-     * trapezoid (top parallel to the base, pointing the same way).
-     *
-     * @return distance in voxel units (0 for a triangle or a top of length 0)
+     * Measures how far a2 is from the parallel to the base through a1, measured in the plane: 0 for
+     * a real trapezoid (top parallel to the base, pointing the same way).
+     * @return (double) Distance in voxel units (0 for a triangle or a top of length 0).
      */
     private double topOffParallel()
     {
-        Vec3 top = a2.sub(a1);
+        Vec3 top  = a2.sub(a1);
         Vec3 base = c.sub(b);
         if (top.length() < 1e-9 || base.length() < 1e-9)
         {
             return 0.0;
         }
-        Vec3 dir = base.normalized();
+        Vec3   dir   = base.normalized();
         double along = top.dot(dir);
         if (along < 0)
         {
@@ -391,10 +419,9 @@ public final class Plane
     }
 
     /**
-     * The four points in 2-D coordinates of the plane (axes: base direction and its in-plane
+     * Gives the four points in 2-D coordinates of the plane (axes: base direction and its in-plane
      * normal), in the order a1, b, a2, c.
-     *
-     * @return four 2-D points, or null when the plane is degenerate
+     * @return (double[][]) Four 2-D points, or null when the plane is degenerate.
      */
     private double[][] inPlane()
     {
@@ -417,8 +444,8 @@ public final class Plane
         {
             return null;
         }
-        Vec3 ey = normal.normalized().cross(ex);
-        Vec3[] pts = {a1, b, a2, c};
+        Vec3       ey  = normal.normalized().cross(ex);
+        Vec3[]     pts = {a1, b, a2, c};
         double[][] out = new double[4][];
         for (int i = 0; i < pts.length; i++)
         {
@@ -429,11 +456,12 @@ public final class Plane
     }
 
     /**
-     * @param (double[]) p segment 1 start
-     * @param (double[]) q segment 1 end
-     * @param (double[]) r segment 2 start
-     * @param (double[]) s segment 2 end
-     * @return true when the open segments p-q and r-s properly intersect
+     * Tests whether two segments cross (touching at an end counts).
+     * @param (double[]) p Segment 1 start.
+     * @param (double[]) q Segment 1 end.
+     * @param (double[]) r Segment 2 start.
+     * @param (double[]) s Segment 2 end.
+     * @return (boolean) True when the open segments p-q and r-s properly intersect.
      */
     private static boolean segmentsIntersect(double[] p, double[] q, double[] r, double[] s)
     {
@@ -445,10 +473,11 @@ public final class Plane
     }
 
     /**
-     * @param (double[]) a line start
-     * @param (double[]) b line end
-     * @param (double[]) p point
-     * @return 2-D cross product (b - a) x (p - a)
+     * Computes which side of the line a-b the point p is on.
+     * @param (double[]) a Line start.
+     * @param (double[]) b Line end.
+     * @param (double[]) p Point.
+     * @return (double) 2-D cross product (b - a) x (p - a).
      */
     private static double cross2(double[] a, double[] b, double[] p)
     {
@@ -456,7 +485,8 @@ public final class Plane
     }
 
     /**
-     * @return true when no coordinate is NaN or infinite
+     * Tells whether every coordinate is a real number.
+     * @return (boolean) True when no coordinate is NaN or infinite.
      */
     private boolean isFinite()
     {
@@ -473,7 +503,8 @@ public final class Plane
     }
 
     /**
-     * @return name of the left side for messages
+     * Names the left side, as messages call it.
+     * @return (String) Name of the left side for messages.
      */
     private String leftName()
     {
@@ -485,7 +516,8 @@ public final class Plane
     }
 
     /**
-     * @return name of the right side for messages
+     * Names the right side, as messages call it.
+     * @return (String) Name of the right side for messages.
      */
     private String rightName()
     {

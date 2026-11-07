@@ -28,20 +28,32 @@ import org.junit.rules.TemporaryFolder;
 public class EdgeCasesTest
 {
     @Rule
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Files of one test, deleted after it. */
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /**
+     * Runs the demo on the lecturer's edge_cases.csv and the die, and checks every frame against
+     * his comments: 16 frames, frames 6 and 9-16 black, warnings for exactly rows 7-16, and 1, 6
+     * and 4 pips on frames 1, 2 and 3 (TC-38).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void demoGivesTheFramesTheCourseExpects() throws IOException
     {
-        File nrrd = tmp.newFile("dice.nrrd");
+        File   nrrd = tmp.newFile("dice.nrrd");
         Volume dice = PhantomGenerator.buildDice();
         NrrdWriter.write(dice, nrrd, true, ByteOrder.LITTLE_ENDIAN);
-        File csv = new File("data/course/edge_cases.csv");
-        File mp4 = new File(tmp.getRoot(), "edge.mp4");
+        File csv    = new File("data/course/edge_cases.csv");
+        File mp4    = new File(tmp.getRoot(), "edge.mp4");
         File frames = new File(tmp.getRoot(), "frames");
 
-        ByteArrayOutputStream err = new ByteArrayOutputStream();
-        PrintStream oldErr = System.err;
+        ByteArrayOutputStream err    = new ByteArrayOutputStream();
+        PrintStream           oldErr = System.err;
         System.setErr(new PrintStream(err, true, "UTF-8"));
         try
         {
@@ -56,14 +68,14 @@ public class EdgeCasesTest
         {
             System.setErr(oldErr);
         }
-        String warnings = new String(err.toByteArray(), StandardCharsets.UTF_8);
-        String[] names = frames.list();
+        String   warnings = new String(err.toByteArray(), StandardCharsets.UTF_8);
+        String[] names    = frames.list();
         assertEquals(16, names.length);
         for (int frame = 1; frame <= 16; frame++)
         {
-            BufferedImage img = ImageIO.read(new File(frames, String.format("frame_%04d.png", frame - 1)));
-            boolean black = isBlack(img);
-            boolean expectBlack = frame == 6 || frame >= 9;
+            BufferedImage img         = ImageIO.read(new File(frames, String.format("frame_%04d.png", frame - 1)));
+            boolean       black       = isBlack(img);
+            boolean       expectBlack = frame == 6 || frame >= 9;
             assertEquals("frame " + frame + " black", expectBlack, black);
             boolean warned = warnings.contains("row " + frame + " (");
             assertEquals("frame " + frame + " warned", frame >= 7, warned);
@@ -76,8 +88,9 @@ public class EdgeCasesTest
     }
 
     /**
-     * @param (BufferedImage) img frame
-     * @return true when every pixel is black
+     * Tests whether a frame is all black.
+     * @param (BufferedImage) img Frame.
+     * @return (boolean) True when every pixel is black.
      */
     private static boolean isBlack(BufferedImage img)
     {
@@ -96,24 +109,23 @@ public class EdgeCasesTest
 
     /**
      * Counts the white blobs (pips: value 200000 = white, the die's body is mid grey).
-     *
-     * @param (BufferedImage) img frame
-     * @return number of 4-connected white regions of at least 20 pixels
+     * @param (BufferedImage) img Frame.
+     * @return (int) Number of 4-connected white regions of at least 20 pixels.
      */
     private static int pips(BufferedImage img)
     {
-        int w = img.getWidth();
-        int h = img.getHeight();
-        boolean[] seen = new boolean[w * h];
-        int count = 0;
-        int[] stack = new int[w * h];
+        int       w     = img.getWidth();
+        int       h     = img.getHeight();
+        boolean[] seen  = new boolean[w * h];
+        int       count = 0;
+        int[]     stack = new int[w * h];
         for (int i = 0; i < w * h; i++)
         {
             if (seen[i] || (img.getRGB(i % w, i / w) & 0xFF) < 240)
             {
                 continue;
             }
-            int top = 0;
+            int top  = 0;
             int size = 0;
             stack[top++] = i;
             seen[i] = true;
@@ -121,10 +133,10 @@ public class EdgeCasesTest
             {
                 int p = stack[--top];
                 size++;
-                int px = p % w;
-                int py = p / w;
-                int[] next = {p - 1, p + 1, p - w, p + w};
-                boolean[] ok = {px > 0, px < w - 1, py > 0, py < h - 1};
+                int       px   = p % w;
+                int       py   = p / w;
+                int[]     next = {p - 1, p + 1, p - w, p + w};
+                boolean[] ok   = {px > 0, px < w - 1, py > 0, py < h - 1};
                 for (int k = 0; k < 4; k++)
                 {
                     if (ok[k] && !seen[next[k]] && (img.getRGB(next[k] % w, next[k] / w) & 0xFF) >= 240)

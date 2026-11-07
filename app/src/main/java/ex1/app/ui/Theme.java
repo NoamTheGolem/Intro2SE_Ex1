@@ -21,61 +21,84 @@ import javax.swing.plaf.metal.DefaultMetalTheme;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 
 /**
- * The app's look (ADR-0014): a dark graphite workspace, in which the scans' grey pictures read
- * best - as in a radiology reading room - and one colour, amber, for everything that is the plane:
- * its outline and points in the views, the frame of the cut, the Play button, the FPS of its video.
+ * The app's look (ADR-0014): a dark graphite workspace, in which the scans' grey pictures read best
+ * - as in a radiology reading room - and one colour, amber, for everything that is the plane: its
+ * outline and points in the views, the frame of the cut, the Play button, the FPS of its video.
  *
- * Built on Swing's own cross-platform look (Metal) with these colours, the system's UI font
- * (Segoe UI on Windows) and a few controls drawn here ({@link FlatButtonUI}, {@link FlatTextFieldUI},
+ * Built on Swing's own cross-platform look (Metal) with these colours, the system's UI font (Segoe
+ * UI on Windows) and a few controls drawn here ({@link FlatButtonUI}, {@link FlatTextFieldUI},
  * {@link FlatScrollBarUI}, {@link FlatSliderUI}), so it looks the same on Windows and Linux and
  * needs no library (SRS C-3). The system's own file dialogs and title bar stay as they are.
  */
 public final class Theme
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
     /** Window, toolbar and status bar. */
     public static final Color CHROME = new Color(0x1B1E24);
+
     /** Panels: the control column, dialogs. */
     public static final Color SURFACE = new Color(0x22262E);
+
     /** Buttons and other raised controls. */
-    public static final Color RAISED = new Color(0x2D323C);
-    public static final Color RAISED_HOVER = new Color(0x363C48);
+    public static final Color RAISED         = new Color(0x2D323C);
+    public static final Color RAISED_HOVER   = new Color(0x363C48);
     public static final Color RAISED_PRESSED = new Color(0x404755);
+
     /** Borders and dividers. */
     public static final Color LINE = new Color(0x393F4C);
+
     /** Behind pictures and in text fields: darker than everything around it. */
     public static final Color WELL = new Color(0x15171B);
-    public static final Color TEXT = new Color(0xE6E8EC);
-    public static final Color TEXT_DIM = new Color(0xA3ABB8);
+
+    /** Text: normal, dim (captions, hints) and faint (disabled, empty views). */
+    public static final Color TEXT       = new Color(0xE6E8EC);
+    public static final Color TEXT_DIM   = new Color(0xA3ABB8);
     public static final Color TEXT_FAINT = new Color(0x6E7685);
+
     /** The plane (the same amber as its outline in the views). */
-    public static final Color PLANE = new Color(0xFF9F1C);
-    public static final Color PLANE_HOVER = new Color(0xFFB347);
+    public static final Color PLANE         = new Color(0xFF9F1C);
+    public static final Color PLANE_HOVER   = new Color(0xFFB347);
     public static final Color PLANE_PRESSED = new Color(0xE58A0C);
+
     /** Text and icons on an amber background. */
     public static final Color ON_PLANE = new Color(0x1B1E24);
-    public static final Color ERROR = new Color(0xFF7070);
+
+    /** Messages: errors and warnings. */
+    public static final Color ERROR   = new Color(0xFF7070);
     public static final Color WARNING = new Color(0xF4D35E);
+
     /** Keyboard focus: a cool ring, distinct from the plane's amber. */
     public static final Color FOCUS = new Color(0x8AB4F8);
 
     /** Client property of a button: which kind of button it is (one of the values below). */
     public static final String VARIANT = "ex1.variant";
+
     /** Filled amber: the main action of its panel. */
     public static final String PRIMARY = "primary";
+
     /** No background until the mouse is over it (arrows on a header). */
     public static final String GHOST = "ghost";
+
     /** The left / right half of a two-part switch (3 points | 4 points). */
     public static final String SEGMENT_FIRST = "segment-first";
-    public static final String SEGMENT_LAST = "segment-last";
+    public static final String SEGMENT_LAST  = "segment-last";
 
     /** Corner radius of buttons, fields and badges. */
     public static final int ARC = 8;
-    /** Base text size in (scaled) pixels. */
-    public static final int TEXT_SIZE = 13;
+
+    /** Text sizes in (scaled) pixels: normal, and small print. */
+    public static final int TEXT_SIZE  = 13;
     public static final int SMALL_SIZE = 12;
 
+    /** UI fonts in the order they are tried, and the names a semibold weight goes by. */
     private static final String[] FAMILIES = {"Segoe UI", "Inter", "Noto Sans", "Cantarell", "Ubuntu", "DejaVu Sans"};
     private static final String[] SEMIBOLD_SUFFIXES = {" Semibold", " SemiBold"};
+
+    /** The fonts found, looked up once. */
     private static String family;
     private static String semiboldFamily;
 
@@ -84,7 +107,9 @@ public final class Theme
     {
     }
 
-    // ===================================================================== ENTRY
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
 
     /**
      * Turns on smooth text where the system does not say how to draw it (Linux). Must run before
@@ -102,8 +127,7 @@ public final class Theme
     /**
      * Installs the look for every Swing component made from now on; call on the Swing thread
      * before building the window.
-     *
-     * @throws (UnsupportedLookAndFeelException) never in practice (Metal is always there)
+     * @throws (UnsupportedLookAndFeelException) Never in practice (Metal is always there).
      */
     public static void install() throws UnsupportedLookAndFeelException
     {
@@ -115,10 +139,13 @@ public final class Theme
         installControls(d);
     }
 
-    // ============================================================ BUILD PIPELINE
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
 
     /**
-     * @param (UIDefaults) d the defaults to fill
+     * Gives every kind of component the UI font.
+     * @param (UIDefaults) d The defaults to fill.
      */
     private static void installFonts(UIDefaults d)
     {
@@ -137,7 +164,8 @@ public final class Theme
     }
 
     /**
-     * @param (UIDefaults) d the defaults to fill
+     * Gives every kind of component its graphite colours.
+     * @param (UIDefaults) d The defaults to fill.
      */
     private static void installColours(UIDefaults d)
     {
@@ -184,9 +212,8 @@ public final class Theme
     }
 
     /**
-     * The controls drawn here, borders and spacing.
-     *
-     * @param (UIDefaults) d the defaults to fill
+     * Gives the controls drawn here their look, borders and spacing.
+     * @param (UIDefaults) d The defaults to fill.
      */
     private static void installControls(UIDefaults d)
     {
@@ -226,11 +253,14 @@ public final class Theme
         d.put("ToggleButton.rollover", Boolean.TRUE);
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (int) size pixel size
-     * @return the UI font, plain
+     * Makes the UI font in a size.
+     * @param (int) size Pixel size.
+     * @return (Font) The UI font, plain.
      */
     public static Font font(int size)
     {
@@ -238,8 +268,10 @@ public final class Theme
     }
 
     /**
-     * @param (int) size pixel size
-     * @return the UI font, semibold where the system has that weight (Segoe UI Semibold), else bold
+     * Makes the UI font in a size, semibold.
+     * @param (int) size Pixel size.
+     * @return (Font) The UI font, semibold where the system has that weight (Segoe UI Semibold),
+     *                else bold.
      */
     public static Font semibold(int size)
     {
@@ -252,8 +284,9 @@ public final class Theme
     }
 
     /**
-     * @param (Color) c colour
-     * @return "#rrggbb" for HTML text
+     * Writes a colour for an HTML label.
+     * @param (Color) c Colour.
+     * @return (String) "#rrggbb" for HTML text.
      */
     public static String hex(Color c)
     {
@@ -261,23 +294,25 @@ public final class Theme
     }
 
     /**
-     * @param (Color) a first colour
-     * @param (Color) b second colour
-     * @param (double) t 0 gives a, 1 gives b
-     * @return the colour between them
+     * Mixes two colours.
+     * @param (Color) a First colour.
+     * @param (Color) b Second colour.
+     * @param (double) t 0 gives a, 1 gives b.
+     * @return (Color) The colour between them.
      */
     public static Color mix(Color a, Color b, double t)
     {
-        int r = (int) Math.round(a.getRed() + (b.getRed() - a.getRed()) * t);
-        int g = (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t);
+        int r  = (int) Math.round(a.getRed() + (b.getRed() - a.getRed()) * t);
+        int g  = (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t);
         int bl = (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t);
         return new Color(r, g, bl);
     }
 
     /**
-     * @param (Color) c colour
-     * @param (int) alpha 0..255
-     * @return the colour with that opacity
+     * Makes a colour see-through.
+     * @param (Color) c Colour.
+     * @param (int) alpha 0..255.
+     * @return (Color) The colour with that opacity.
      */
     public static Color alpha(Color c, int alpha)
     {
@@ -285,7 +320,9 @@ public final class Theme
     }
 
     /**
-     * @return the first UI font family of {@link #FAMILIES} this computer has
+     * Finds the UI font this computer has (once, then remembers it), and its semibold weight if
+     * any.
+     * @return (String) The first UI font family of {@link #FAMILIES} this computer has.
      */
     private static synchronized String family()
     {
@@ -294,7 +331,7 @@ public final class Theme
             return family;
         }
         Set<String> installed = new HashSet<String>();
-        String[] names = new String[0];
+        String[]    names     = new String[0];
         try
         {
             names = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames(Locale.ROOT);
@@ -324,9 +361,10 @@ public final class Theme
     }
 
     /**
-     * @param (UIDefaults) d defaults
-     * @param (String) key key
-     * @param (Color) c colour
+     * Sets a colour in Swing's defaults.
+     * @param (UIDefaults) d Defaults.
+     * @param (String) key Key.
+     * @param (Color) c Colour.
      */
     private static void put(UIDefaults d, String key, Color c)
     {
@@ -334,7 +372,8 @@ public final class Theme
     }
 
     /**
-     * @return true on Windows
+     * Tells whether the app runs on Windows.
+     * @return (boolean) True on Windows.
      */
     private static boolean onWindows()
     {
@@ -347,142 +386,231 @@ public final class Theme
      */
     private static final class GraphiteMetalTheme extends DefaultMetalTheme
     {
-        private static final ColorUIResource PRIMARY1 = new ColorUIResource(PLANE_PRESSED);
-        private static final ColorUIResource PRIMARY2 = new ColorUIResource(PLANE);
-        private static final ColorUIResource PRIMARY3 = new ColorUIResource(mix(PLANE, SURFACE, 0.55));
+        /** Metal's colours in graphite and amber. */
+        private static final ColorUIResource PRIMARY1   = new ColorUIResource(PLANE_PRESSED);
+        private static final ColorUIResource PRIMARY2   = new ColorUIResource(PLANE);
+        private static final ColorUIResource PRIMARY3   = new ColorUIResource(mix(PLANE, SURFACE, 0.55));
         private static final ColorUIResource SECONDARY1 = new ColorUIResource(WELL);
         private static final ColorUIResource SECONDARY2 = new ColorUIResource(LINE);
         private static final ColorUIResource SECONDARY3 = new ColorUIResource(SURFACE);
-        private static final ColorUIResource LIGHT = new ColorUIResource(TEXT);
-        private static final ColorUIResource DARK = new ColorUIResource(WELL);
-        private static final ColorUIResource DIM = new ColorUIResource(TEXT_FAINT);
+        private static final ColorUIResource LIGHT      = new ColorUIResource(TEXT);
+        private static final ColorUIResource DARK       = new ColorUIResource(WELL);
+        private static final ColorUIResource DIM        = new ColorUIResource(TEXT_FAINT);
 
+        /**
+         * Names the theme.
+         * @return (String) Its name.
+         */
         @Override
         public String getName()
         {
             return "Graphite";
         }
 
+        /**
+         * Gives Metal's darkest highlight colour.
+         * @return (ColorUIResource) Pressed amber.
+         */
         @Override
         protected ColorUIResource getPrimary1()
         {
             return PRIMARY1;
         }
 
+        /**
+         * Gives Metal's main highlight colour (selections, focus).
+         * @return (ColorUIResource) Amber.
+         */
         @Override
         protected ColorUIResource getPrimary2()
         {
             return PRIMARY2;
         }
 
+        /**
+         * Gives Metal's lightest highlight colour.
+         * @return (ColorUIResource) Amber mixed into the surface.
+         */
         @Override
         protected ColorUIResource getPrimary3()
         {
             return PRIMARY3;
         }
 
+        /**
+         * Gives Metal's darkest control colour (shadows, borders).
+         * @return (ColorUIResource) The well colour.
+         */
         @Override
         protected ColorUIResource getSecondary1()
         {
             return SECONDARY1;
         }
 
+        /**
+         * Gives Metal's middle control colour (lines, disabled parts).
+         * @return (ColorUIResource) The line colour.
+         */
         @Override
         protected ColorUIResource getSecondary2()
         {
             return SECONDARY2;
         }
 
+        /**
+         * Gives Metal's control background.
+         * @return (ColorUIResource) The surface colour.
+         */
         @Override
         protected ColorUIResource getSecondary3()
         {
             return SECONDARY3;
         }
 
+        /**
+         * Gives what Metal calls black, which it uses for text and lines: light, in a dark theme.
+         * @return (ColorUIResource) The text colour.
+         */
         @Override
         protected ColorUIResource getBlack()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives what Metal calls white, which it uses for backgrounds: dark, in a dark theme.
+         * @return (ColorUIResource) The well colour.
+         */
         @Override
         protected ColorUIResource getWhite()
         {
             return DARK;
         }
 
+        /**
+         * Gives the colour of the text on controls.
+         * @return (ColorUIResource) Light.
+         */
         @Override
         public ColorUIResource getControlTextColor()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives the colour of the text on disabled controls.
+         * @return (ColorUIResource) Faint.
+         */
         @Override
         public ColorUIResource getInactiveControlTextColor()
         {
             return DIM;
         }
 
+        /**
+         * Gives the colour of labels and titles.
+         * @return (ColorUIResource) Light.
+         */
         @Override
         public ColorUIResource getSystemTextColor()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives the colour of the text the user types.
+         * @return (ColorUIResource) Light.
+         */
         @Override
         public ColorUIResource getUserTextColor()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives the colour of disabled labels.
+         * @return (ColorUIResource) Faint.
+         */
         @Override
         public ColorUIResource getInactiveSystemTextColor()
         {
             return DIM;
         }
 
+        /**
+         * Gives the colour of menu items.
+         * @return (ColorUIResource) Light.
+         */
         @Override
         public ColorUIResource getMenuForeground()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives the colour of selected text.
+         * @return (ColorUIResource) Light.
+         */
         @Override
         public ColorUIResource getHighlightedTextColor()
         {
             return LIGHT;
         }
 
+        /**
+         * Gives the font of controls: the UI font, not Metal's bold one.
+         * @return (FontUIResource) The UI font.
+         */
         @Override
         public FontUIResource getControlTextFont()
         {
             return new FontUIResource(font(TEXT_SIZE));
         }
 
+        /**
+         * Gives the font of labels.
+         * @return (FontUIResource) The UI font.
+         */
         @Override
         public FontUIResource getSystemTextFont()
         {
             return new FontUIResource(font(TEXT_SIZE));
         }
 
+        /**
+         * Gives the font of the text the user types.
+         * @return (FontUIResource) The UI font.
+         */
         @Override
         public FontUIResource getUserTextFont()
         {
             return new FontUIResource(font(TEXT_SIZE));
         }
 
+        /**
+         * Gives the font of menus.
+         * @return (FontUIResource) The UI font.
+         */
         @Override
         public FontUIResource getMenuTextFont()
         {
             return new FontUIResource(font(TEXT_SIZE));
         }
 
+        /**
+         * Gives the font of window titles.
+         * @return (FontUIResource) The UI font, semibold.
+         */
         @Override
         public FontUIResource getWindowTitleFont()
         {
             return new FontUIResource(semibold(TEXT_SIZE));
         }
 
+        /**
+         * Gives the font of Metal's small print, such as the shortcut keys in menus.
+         * @return (FontUIResource) The small UI font.
+         */
         @Override
         public FontUIResource getSubTextFont()
         {

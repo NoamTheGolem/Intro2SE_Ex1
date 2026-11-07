@@ -50,50 +50,74 @@ final class OrthoView extends JComponent
     interface Host
     {
         /**
-         * @param (int) view which view was clicked
-         * @param (Vec3) index the clicked point in voxel indices
+         * Called when a slice view is clicked.
+         * @param (int) view Which view was clicked.
+         * @param (Vec3) index The clicked point in voxel indices.
          */
         void orthoClicked(int view, Vec3 index);
 
         /**
-         * @param (int) view view whose slice changed
+         * Called when a view moves to another slice.
+         * @param (int) view View whose slice changed.
          */
         void sliceChanged(int view);
     }
 
+    /**
+     * Each view's colour (axial, coronal, sagittal): its header and its line in the other views.
+     */
     static final Color[] VIEW_COLOURS = {new Color(0xE05252), new Color(0x63B85F), new Color(0xE3C14A)};
 
+    /** Version of the serialized form (Swing components are Serializable). */
     private static final long serialVersionUID = 1L;
-    private static final Color BACKGROUND = Theme.WELL;
-    private static final Color PLANE = new Color(0xFF9F1C);
-    private static final Color LABEL = new Color(0xF2D64B);
-    private static final int MARGIN = 14;
-    private static final double MARK_DISTANCE = 2.5;
-    private static final double SAME_SPOT = 6.0;
 
-    private final int view;
+    /** Colours of the slice, the plane and the patient directions. */
+    private static final Color BACKGROUND = Theme.WELL;
+    private static final Color PLANE      = new Color(0xFF9F1C);
+    private static final Color LABEL      = new Color(0xF2D64B);
+
+    /** Slices per wheel notch with Shift. */
+    private static final int FAST_STEP = 10;
+
+    /** Space around the slice, in pixels. */
+    private static final int MARGIN = 14;
+
+    /** Point marks. */
+    private static final double MARK_DISTANCE = 2.5;   // mm: a point this close to the slice is drawn solid, else as a ring
+    private static final double SAME_SPOT     = 6.0;   // pixels: points this close share one label
+
+    /** Which view this is, and who hears its clicks. */
+    private final int            view;
     private final transient Host host;
+
+    /** The projector that cuts the slices, the scan, and the slice on show as an image. */
     private final transient Projector projector = Projector.create(Projector.Interpolation.NEAREST);
-    private transient VolumeGeometry geometry;
-    private transient Volume volume;
+    private transient VolumeGeometry  geometry;
+    private transient Volume          volume;
     private transient IntensityWindow window;
-    private transient BufferedImage image;
-    private transient Plane plane;
-    private transient List<Vec3> points = new ArrayList<Vec3>();
-    private transient List<String> pointNames = new ArrayList<String>();
-    private final int[] otherSlices = new int[3];
-    private int slice;
+    private transient BufferedImage   image;
+
+    /** The plane, its points, and where the other two views are. */
+    private transient Plane        plane;
+    private transient List<Vec3>   points      = new ArrayList<Vec3>();
+    private transient List<String> pointNames  = new ArrayList<String>();
+    private final int[]            otherSlices = new int[3];
+
+    /** The slice on show, and whether a click places a point. */
+    private int     slice;
     private boolean picking;
 
-    // where the image was last drawn (for mouse mapping)
+    /** Where the slice was drawn and how big a voxel is on the screen, to map clicks back. */
     private double drawX;
     private double drawY;
     private double pixelW = 1;
     private double pixelH = 1;
 
     /**
-     * @param (int) view VolumeGeometry.AXIAL, CORONAL or SAGITTAL
-     * @param (Host) host receives clicks
+     * Creates a slice view and its mouse handling: a click places a point or moves the other views
+     * there, the wheel steps through the slices (Shift: ten at a time).
+     * @param (int) view VolumeGeometry.AXIAL, CORONAL or SAGITTAL.
+     * @param (Host) host Receives clicks.
      */
     OrthoView(int view, Host host)
     {
@@ -105,6 +129,10 @@ final class OrthoView extends JComponent
         setPreferredSize(new Dimension(260, 220));
         MouseAdapter mouse = new MouseAdapter()
         {
+            /**
+             * Passes a click on the drawn slice to the app, as a point in voxel indices.
+             * @param (MouseEvent) e The click.
+             */
             @Override
             public void mouseClicked(MouseEvent e)
             {
@@ -115,6 +143,10 @@ final class OrthoView extends JComponent
                 }
             }
 
+            /**
+             * Steps through the slices: one per wheel notch, ten with Shift.
+             * @param (MouseWheelEvent) e The wheel turn.
+             */
             @Override
             public void mouseWheelMoved(MouseWheelEvent e)
             {
@@ -125,7 +157,7 @@ final class OrthoView extends JComponent
                 int step = 1;
                 if (e.isShiftDown())
                 {
-                    step = 10;
+                    step = FAST_STEP;
                 }
                 setSlice(slice - e.getWheelRotation() * step);
                 if (OrthoView.this.host != null)
@@ -138,12 +170,15 @@ final class OrthoView extends JComponent
         addMouseWheelListener(mouse);
     }
 
-    // ------------------------------------------------------------------ data in
+    // ==========================================
+    //                  DATA IN
+    // ==========================================
 
     /**
-     * @param (Volume) v volume, or null
-     * @param (IntensityWindow) w grey mapping
-     * @param (VolumeGeometry) g geometry
+     * Shows a new volume, starting at its middle slice.
+     * @param (Volume) v Volume, or null.
+     * @param (IntensityWindow) w Grey mapping.
+     * @param (VolumeGeometry) g Geometry.
      */
     void setVolume(Volume v, IntensityWindow w, VolumeGeometry g)
     {
@@ -160,7 +195,8 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (int) k new slice index (clamped)
+     * Moves to another slice and draws it.
+     * @param (int) k New slice index (clamped).
      */
     void setSlice(int k)
     {
@@ -168,7 +204,7 @@ final class OrthoView extends JComponent
         {
             return;
         }
-        int max = geometry.size(geometry.constantAxis(view)) - 1;
+        int max     = geometry.size(geometry.constantAxis(view)) - 1;
         int clamped = Math.max(0, Math.min(max, k));
         if (clamped != slice || image == null)
         {
@@ -179,7 +215,8 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @return current slice index along the constant axis
+     * Gives the slice on show.
+     * @return (int) Current slice index along the constant axis.
      */
     int slice()
     {
@@ -187,7 +224,8 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @return number of slices
+     * Gives how many slices the view can show.
+     * @return (int) Number of slices.
      */
     int sliceCount()
     {
@@ -199,9 +237,10 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Plane) p cutting plane (null hides it)
-     * @param (List) pts the plane's points to mark
-     * @param (List) names their labels
+     * Shows where a new plane crosses the slice, with its points.
+     * @param (Plane) p Cutting plane (null hides it).
+     * @param (List<Vec3>) pts The plane's points to mark.
+     * @param (List<String>) names Their labels.
      */
     void setPlane(Plane p, List<Vec3> pts, List<String> names)
     {
@@ -212,7 +251,8 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (int[]) slices current slice of each view (to draw the other views' positions)
+     * Records where the other two views are, for the crosshair lines.
+     * @param (int[]) slices Current slice of each view (to draw the other views' positions).
      */
     void setOtherSlices(int[] slices)
     {
@@ -221,7 +261,8 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (boolean) on true while the user is placing points
+     * Switches picking mode on or off: a crosshair cursor and a hint while it is on.
+     * @param (boolean) on True while the user is placing points.
      */
     void setPicking(boolean on)
     {
@@ -236,19 +277,21 @@ final class OrthoView extends JComponent
         }
     }
 
-    // ------------------------------------------------------------------ painting
+    // ==========================================
+    //                  PAINTING
+    // ==========================================
 
     /** Projects the view's rectangle at the current slice. */
     private void renderSlice()
     {
-        Plane p = geometry.slicePlane(view, slice);
-        Image2D img = projector.project(volume, p);
-        int w = img.width();
-        int h = img.height();
-        byte[] grey = new byte[w * h];
+        Plane   p    = geometry.slicePlane(view, slice);
+        Image2D img  = projector.project(volume, p);
+        int     w    = img.width();
+        int     h    = img.height();
+        byte[]  grey = new byte[w * h];
         window.toGrey(img, grey, w, h, w, h);
-        BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        int[] rgb = new int[w * h];
+        BufferedImage bi  = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        int[]         rgb = new int[w * h];
         for (int i = 0; i < rgb.length; i++)
         {
             int g = grey[i] & 0xFF;
@@ -258,6 +301,11 @@ final class OrthoView extends JComponent
         image = bi;
     }
 
+    /**
+     * Draws the slice at its true proportions (mm, not voxels), then the lines of the other two
+     * views, the plane's crossing with its points, and the patient directions.
+     * @param (Graphics) g0 Graphics of the view.
+     */
     @Override
     protected void paintComponent(Graphics g0)
     {
@@ -273,8 +321,8 @@ final class OrthoView extends JComponent
             g.drawString(hint, (getWidth() - g.getFontMetrics().stringWidth(hint)) / 2, getHeight() / 2);
             return;
         }
-        int h = geometry.horizontalAxis(view);
-        int v = geometry.verticalAxis(view);
+        int    h     = geometry.horizontalAxis(view);
+        int    v     = geometry.verticalAxis(view);
         double physW = image.getWidth() * geometry.spacing(h);
         double physH = image.getHeight() * geometry.spacing(v);
         double scale = Math.min((getWidth() - 2.0 * MARGIN) / physW, (getHeight() - 2.0 * MARGIN) / physH);
@@ -292,7 +340,10 @@ final class OrthoView extends JComponent
         drawLabels(g, dw, dh);
     }
 
-    /** Thin lines where the other two views cut this one (Slicer's slice intersections). */
+    /**
+     * Draws thin lines where the other two views cut this one (Slicer's slice intersections).
+     * @param (Graphics2D) g Graphics of the view.
+     */
     private void drawOtherViews(Graphics2D g)
     {
         Stroke old = g.getStroke();
@@ -303,9 +354,9 @@ final class OrthoView extends JComponent
             {
                 continue;
             }
-            int axis = geometry.constantAxis(other);
-            double k = otherSlices[other];
-            Color c = VIEW_COLOURS[other];
+            int    axis = geometry.constantAxis(other);
+            double k    = otherSlices[other];
+            Color  c    = VIEW_COLOURS[other];
             g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 150));
             if (axis == geometry.horizontalAxis(view))
             {
@@ -321,19 +372,22 @@ final class OrthoView extends JComponent
         g.setStroke(old);
     }
 
-    /** Where the cutting plane crosses this slice. */
+    /**
+     * Draws where the cutting plane crosses this slice.
+     * @param (Graphics2D) g Graphics of the view.
+     */
     private void drawPlane(Graphics2D g)
     {
         if (plane == null || !plane.isRenderable())
         {
             return;
         }
-        int c = geometry.constantAxis(view);
+        int    c = geometry.constantAxis(view);
         double k = slice;
         // The whole (infinite) plane: dashed.
-        Vec3 n = normalOf(plane);
+        Vec3     n    = normalOf(plane);
         double[] line = planeLine(n, plane.a1(), c, k);
-        Stroke old = g.getStroke();
+        Stroke   old  = g.getStroke();
         if (line != null)
         {
             g.setColor(new Color(255, 159, 28, 120));
@@ -353,14 +407,14 @@ final class OrthoView extends JComponent
         List<double[]> hits = new ArrayList<double[]>();
         for (int i = 0; i < poly.length; i++)
         {
-            Vec3 p = poly[i];
-            Vec3 q = poly[(i + 1) % poly.length];
+            Vec3   p  = poly[i];
+            Vec3   q  = poly[(i + 1) % poly.length];
             double pc = coord(p, c) - k;
             double qc = coord(q, c) - k;
             if ((pc <= 0 && qc > 0) || (pc > 0 && qc <= 0))
             {
                 double t = pc / (pc - qc);
-                Vec3 x = p.add(q.sub(p).scale(t));
+                Vec3   x = p.add(q.sub(p).scale(t));
                 hits.add(new double[] {screenX(coord(x, geometry.horizontalAxis(view))),
                     screenY(coord(x, geometry.verticalAxis(view)))});
             }
@@ -376,12 +430,15 @@ final class OrthoView extends JComponent
         g.setStroke(old);
     }
 
-    /** The plane's points (a, b, c ...) near this slice. */
+    /**
+     * Draws the plane's points (a, b, c ...) near this slice: solid on it, a ring further away.
+     * @param (Graphics2D) g Graphics of the view.
+     */
     private void drawPoints(Graphics2D g)
     {
         int c = geometry.constantAxis(view);
         g.setFont(Theme.semibold(Theme.SMALL_SIZE));
-        int n = points.size();
+        int      n  = points.size();
         double[] xs = new double[n];
         double[] ys = new double[n];
         for (int i = 0; i < n; i++)
@@ -392,10 +449,10 @@ final class OrthoView extends JComponent
         }
         for (int i = 0; i < n; i++)
         {
-            Vec3 p = points.get(i);
+            Vec3   p    = points.get(i);
             double dist = Math.abs(coord(p, c) - slice) * geometry.spacing(c);
-            double sx = xs[i];
-            double sy = ys[i];
+            double sx   = xs[i];
+            double sy   = ys[i];
             if (dist <= MARK_DISTANCE)
             {
                 g.setColor(PLANE);
@@ -420,11 +477,11 @@ final class OrthoView extends JComponent
     /**
      * Points that land on the same spot of this view (they differ only along the view's depth)
      * share one label, "a1, b", instead of printing their names on top of each other.
-     *
-     * @param (int) i index of the point
-     * @param (double[]) xs screen x of every point
-     * @param (double[]) ys screen y of every point
-     * @return the label to draw at point i, or null when an earlier point already carries it
+     * @param (int) i Index of the point.
+     * @param (double[]) xs Screen x of every point.
+     * @param (double[]) ys Screen y of every point.
+     * @return (String) The label to draw at point i, or null when an earlier point already carries
+     *                  it.
      */
     private String sharedLabel(int i, double[] xs, double[] ys)
     {
@@ -447,9 +504,10 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Graphics2D) g graphics
-     * @param (double) dw drawn image width
-     * @param (double) dh drawn image height
+     * Writes the patient directions at the edges of the slice, and the picking hint.
+     * @param (Graphics2D) g Graphics.
+     * @param (double) dw Drawn image width.
+     * @param (double) dh Drawn image height.
      */
     private void drawLabels(Graphics2D g, double dw, double dh)
     {
@@ -473,12 +531,15 @@ final class OrthoView extends JComponent
         }
     }
 
-    // ------------------------------------------------------------------ mapping
+    // ==========================================
+    //                  MAPPING
+    // ==========================================
 
     /**
-     * @param (int) mx mouse x
-     * @param (int) my mouse y
-     * @return the voxel-index point under the mouse, or null outside the slice
+     * Maps a mouse position on the drawn slice back to voxel indices.
+     * @param (int) mx Mouse x.
+     * @param (int) my Mouse y.
+     * @return (Vec3) The voxel-index point under the mouse, or null outside the slice.
      */
     Vec3 toIndex(int mx, int my)
     {
@@ -492,9 +553,9 @@ final class OrthoView extends JComponent
         {
             return null;
         }
-        int h = geometry.horizontalAxis(view);
-        int v = geometry.verticalAxis(view);
-        int c = geometry.constantAxis(view);
+        int      h = geometry.horizontalAxis(view);
+        int      v = geometry.verticalAxis(view);
+        int      c = geometry.constantAxis(view);
         double[] p = new double[3];
         p[h] = start(h, geometry.horizontalStep(view)) + col * geometry.horizontalStep(view);
         p[v] = start(v, geometry.verticalStep(view)) + row * geometry.verticalStep(view);
@@ -503,31 +564,35 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (double) index index along the horizontal axis
-     * @return screen x of that voxel's centre
+     * Maps an index along the view's horizontal axis to a screen x.
+     * @param (double) index Index along the horizontal axis.
+     * @return (double) Screen x of that voxel's centre.
      */
     private double screenX(double index)
     {
-        int h = geometry.horizontalAxis(view);
+        int    h   = geometry.horizontalAxis(view);
         double col = (index - start(h, geometry.horizontalStep(view))) * geometry.horizontalStep(view);
         return drawX + (col + 0.5) * pixelW;
     }
 
     /**
-     * @param (double) index index along the vertical axis
-     * @return screen y of that voxel's centre
+     * Maps an index along the view's vertical axis to a screen y.
+     * @param (double) index Index along the vertical axis.
+     * @return (double) Screen y of that voxel's centre.
      */
     private double screenY(double index)
     {
-        int v = geometry.verticalAxis(view);
+        int    v   = geometry.verticalAxis(view);
         double row = (index - start(v, geometry.verticalStep(view))) * geometry.verticalStep(view);
         return drawY + (row + 0.5) * pixelH;
     }
 
     /**
-     * @param (int) axis index axis
-     * @param (int) step +1 or -1
-     * @return the index at the left / top edge of the image
+     * Finds the index at the start of the drawn image along one axis, which depends on the
+     * direction the axis is drawn in.
+     * @param (int) axis Index axis.
+     * @param (int) step +1 or -1.
+     * @return (double) The index at the left / top edge of the image.
      */
     private double start(int axis, int step)
     {
@@ -539,28 +604,27 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * Where the infinite plane crosses the slice, clipped to the image rectangle.
-     *
-     * @param (Vec3) n plane normal (index space)
-     * @param (Vec3) a a point of the plane
-     * @param (int) c the view's constant axis
-     * @param (double) k the slice
-     * @return screen segment {x1, y1, x2, y2} or null
+     * Finds where the infinite plane crosses the slice, clipped to the image rectangle.
+     * @param (Vec3) n Plane normal (index space).
+     * @param (Vec3) a A point of the plane.
+     * @param (int) c The view's constant axis.
+     * @param (double) k The slice.
+     * @return (double[]) Screen segment {x1, y1, x2, y2} or null.
      */
     private double[] planeLine(Vec3 n, Vec3 a, int c, double k)
     {
-        int h = geometry.horizontalAxis(view);
-        int v = geometry.verticalAxis(view);
-        double hMax = geometry.size(h) - 1;
-        double vMax = geometry.size(v) - 1;
-        double[][] corners = {{0, 0}, {hMax, 0}, {hMax, vMax}, {0, vMax}};
-        List<double[]> pts = new ArrayList<double[]>();
+        int            h       = geometry.horizontalAxis(view);
+        int            v       = geometry.verticalAxis(view);
+        double         hMax    = geometry.size(h) - 1;
+        double         vMax    = geometry.size(v) - 1;
+        double[][]     corners = {{0, 0}, {hMax, 0}, {hMax, vMax}, {0, vMax}};
+        List<double[]> pts     = new ArrayList<double[]>();
         for (int i = 0; i < 4; i++)
         {
-            double[] p = corners[i];
-            double[] q = corners[(i + 1) % 4];
-            double fp = side(n, a, h, p[0], v, p[1], c, k);
-            double fq = side(n, a, h, q[0], v, q[1], c, k);
+            double[] p  = corners[i];
+            double[] q  = corners[(i + 1) % 4];
+            double   fp = side(n, a, h, p[0], v, p[1], c, k);
+            double   fq = side(n, a, h, q[0], v, q[1], c, k);
             if ((fp <= 0 && fq > 0) || (fp > 0 && fq <= 0))
             {
                 double t = fp / (fp - fq);
@@ -575,15 +639,17 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Vec3) n normal
-     * @param (Vec3) a plane point
-     * @param (int) h axis of the first coordinate
-     * @param (double) hv its value
-     * @param (int) v axis of the second coordinate
-     * @param (double) vv its value
-     * @param (int) c axis of the third coordinate
-     * @param (double) cv its value
-     * @return signed distance of that point from the plane (times |n|)
+     * Evaluates the plane equation at a corner of the slice, to find where the plane crosses its
+     * edges.
+     * @param (Vec3) n Normal.
+     * @param (Vec3) a Plane point.
+     * @param (int) h Axis of the first coordinate.
+     * @param (double) hv Its value.
+     * @param (int) v Axis of the second coordinate.
+     * @param (double) vv Its value.
+     * @param (int) c Axis of the third coordinate.
+     * @param (double) cv Its value.
+     * @return (double) Signed distance of that point from the plane (times |n|).
      */
     private static double side(Vec3 n, Vec3 a, int h, double hv, int v, double vv, int c, double cv)
     {
@@ -595,8 +661,10 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Plane) p plane
-     * @return a normal of it (index space)
+     * Computes a normal of the plane from its points (the longer of the two cross products for a
+     * trapezoid, so a thin one does not lose precision).
+     * @param (Plane) p Plane.
+     * @return (Vec3) A normal of it (index space).
      */
     static Vec3 normalOf(Plane p)
     {
@@ -613,9 +681,10 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Vec3) p point
-     * @param (int) axis 0, 1, 2
-     * @return the coordinate
+     * Picks one coordinate of a point by axis number.
+     * @param (Vec3) p Point.
+     * @param (int) axis 0, 1, 2.
+     * @return (double) The coordinate.
      */
     private static double coord(Vec3 p, int axis)
     {
@@ -631,10 +700,11 @@ final class OrthoView extends JComponent
     }
 
     /**
-     * @param (Graphics2D) g graphics
-     * @param (String) s text
-     * @param (int) cx centre x
-     * @param (int) y baseline
+     * Draws a text centred on a point.
+     * @param (Graphics2D) g Graphics.
+     * @param (String) s Text.
+     * @param (int) cx Centre x.
+     * @param (int) y Baseline.
      */
     private static void centred(Graphics2D g, String s, int cx, int y)
     {
@@ -644,24 +714,29 @@ final class OrthoView extends JComponent
     /** A view with its header: coloured bar, name, slice slider and position. */
     static final class Panel extends JPanel
     {
+        /** Version of the serialized form (Swing components are Serializable). */
         private static final long serialVersionUID = 1L;
 
+        /** The view, its slider and the line that says which slice is on show. */
         private final OrthoView ortho;
-        private final JSlider slider = new JSlider(0, 1, 0);
-        private final JLabel position = new JLabel(" ");
+        private final JSlider   slider   = new JSlider(0, 1, 0);
+        private final JLabel    position = new JLabel(" ");
+
+        /** True while sync() moves the slider, so the move is not taken for the user's. */
         private boolean updating;
 
         /**
-         * @param (int) view view
-         * @param (Host) host receives clicks
-         * @param (boolean) withName false when the panel's container already names the view
+         * Creates the view with its slider bar.
+         * @param (int) view View.
+         * @param (Host) host Receives clicks.
+         * @param (boolean) withName False when the panel's container already names the view.
          */
         Panel(final int view, Host host, boolean withName)
         {
             super(new BorderLayout());
             ortho = new OrthoView(view, host);
-            final Host h = host;
-            JPanel bar = new JPanel(new BorderLayout(8, 0));
+            final Host h   = host;
+            JPanel     bar = new JPanel(new BorderLayout(8, 0));
             bar.setBackground(Theme.CHROME);
             bar.setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
             JLabel name = new JLabel(VolumeGeometry.name(view) + "  " + VolumeGeometry.hint(view));
@@ -673,6 +748,11 @@ final class OrthoView extends JComponent
             slider.setEnabled(false);
             slider.addChangeListener(new ChangeListener()
             {
+                /**
+                 * Follows the slider to its slice; a change made by sync() itself is not passed on
+                 * again.
+                 * @param (ChangeEvent) e The slider's change.
+                 */
                 @Override
                 public void stateChanged(ChangeEvent e)
                 {
@@ -699,7 +779,8 @@ final class OrthoView extends JComponent
         }
 
         /**
-         * @return the view
+         * Gives the slice view inside the panel.
+         * @return (OrthoView) The view.
          */
         OrthoView view()
         {

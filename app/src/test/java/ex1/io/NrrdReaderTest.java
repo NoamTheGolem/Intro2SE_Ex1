@@ -12,6 +12,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -23,11 +25,18 @@ import org.junit.rules.TemporaryFolder;
 public class NrrdReaderTest
 {
     @Rule
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Files of one test, deleted after it. */
     public TemporaryFolder tmp = new TemporaryFolder();
 
     /**
-     * @param (VoxelType) type storage type
-     * @return small volume with distinct values, including large/negative ones
+     * Makes a small volume of a storage type.
+     * @param (VoxelType) type Storage type.
+     * @return (Volume) Small volume with distinct values, including large/negative ones.
      */
     private static Volume sample(VoxelType type)
     {
@@ -44,11 +53,16 @@ public class NrrdReaderTest
         return v;
     }
 
+    /**
+     * Checks that every storage type, raw and gzip, in both byte orders, reads back as the voxels
+     * written (TC-20).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void roundTripAllTypesEncodingsAndEndians() throws IOException
     {
-        VoxelType[] types = VoxelType.values();
-        boolean[] gzips = {false, true};
+        VoxelType[] types  = VoxelType.values();
+        boolean[]   gzips  = {false, true};
         ByteOrder[] orders = {ByteOrder.LITTLE_ENDIAN, ByteOrder.BIG_ENDIAN};
         for (int t = 0; t < types.length; t++)
         {
@@ -57,9 +71,9 @@ public class NrrdReaderTest
                 for (int o = 0; o < orders.length; o++)
                 {
                     Volume src = sample(types[t]);
-                    File f = tmp.newFile();
+                    File   f   = tmp.newFile();
                     NrrdWriter.write(src, f, gzips[g], orders[o]);
-                    Volume back = NrrdReader.read(f);
+                    Volume back  = NrrdReader.read(f);
                     String label = types[t] + " gzip=" + gzips[g] + " " + orders[o];
                     assertEquals(label, types[t], back.type());
                     assertEquals(label, 5, back.sizeX());
@@ -74,10 +88,14 @@ public class NrrdReaderTest
         }
     }
 
+    /**
+     * Checks a detached header: a .nhdr file whose samples are in another file (TC-21).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void readsDetachedHeader() throws IOException
     {
-        File raw = tmp.newFile("data.raw");
+        File             raw = tmp.newFile("data.raw");
         FileOutputStream out = new FileOutputStream(raw);
         out.write(new byte[] {1, 2, 3, 4, 5, 6, 7, 8});
         out.close();
@@ -87,6 +105,10 @@ public class NrrdReaderTest
         assertEquals(8f, v.get(1, 1, 1), 0f);
     }
 
+    /**
+     * Checks the real MRHead.nrrd when it is there: 256 x 256 x 130, 16-bit signed (TC-22).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void readsRealMRHeadIfPresent() throws IOException
     {
@@ -106,12 +128,20 @@ public class NrrdReaderTest
         assertEquals(VoxelType.INT16, v.type());
     }
 
+    /**
+     * Checks that a file that is not a NRRD is reported as such (TC-23).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsNonNrrd() throws IOException
     {
         expectError(writeText("x.nrrd", "hello\n"), "not a NRRD");
     }
 
+    /**
+     * Checks that a volume that is not 3-D is reported by its dimension (TC-24).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsUnsupportedDimension() throws IOException
     {
@@ -119,6 +149,10 @@ public class NrrdReaderTest
                 "dimension");
     }
 
+    /**
+     * Checks that an encoding other than raw or gzip is reported (TC-25).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsUnsupportedEncoding() throws IOException
     {
@@ -126,6 +160,10 @@ public class NrrdReaderTest
                 "encoding");
     }
 
+    /**
+     * Checks that a type the assignment does not ask for (double) is reported (TC-26).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsDoubleType() throws IOException
     {
@@ -133,6 +171,10 @@ public class NrrdReaderTest
                 + "encoding: raw\n\n"), "type");
     }
 
+    /**
+     * Checks that data that ends early is reported (TC-27).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsTruncatedData() throws IOException
     {
@@ -140,6 +182,10 @@ public class NrrdReaderTest
                 "ended early");
     }
 
+    /**
+     * Checks that a missing required field is reported by its name (TC-28).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void rejectsMissingField() throws IOException
     {
@@ -147,14 +193,15 @@ public class NrrdReaderTest
     }
 
     /**
-     * @param (String) name file name
-     * @param (String) text content
-     * @return the written file
-     * @throws (IOException) on I/O errors
+     * Writes a text file into the test folder.
+     * @param (String) name File name.
+     * @param (String) text Content.
+     * @return (File) The written file.
+     * @throws (IOException) On I/O errors.
      */
     private File writeText(String name, String text) throws IOException
     {
-        File f = tmp.newFile(name);
+        File             f   = tmp.newFile(name);
         FileOutputStream out = new FileOutputStream(f);
         out.write(text.getBytes(StandardCharsets.ISO_8859_1));
         out.close();
@@ -162,8 +209,9 @@ public class NrrdReaderTest
     }
 
     /**
-     * @param (File) f file expected to fail
-     * @param (String) fragment text expected in the error message
+     * Reads a broken file and checks that the error names the problem.
+     * @param (File) f File expected to fail.
+     * @param (String) fragment Text expected in the error message.
      */
     private static void expectError(File f, String fragment)
     {
@@ -178,10 +226,13 @@ public class NrrdReaderTest
         }
     }
 
+    /**
+     * Checks that the space and the space directions are kept on the volume for the views (TC-29).
+     */
     @Test
     public void readsSpaceDirectionsForTheViewer()
     {
-        java.util.Map<String, String> fields = new java.util.HashMap<String, String>();
+        Map<String, String> fields = new HashMap<String, String>();
         fields.put("space directions", "(0,1,0) (0,0,-1) (-1.2999954223632812,0,0)");
         double[][] d = NrrdReader.parseDirections(fields);
         assertEquals(-1.2999954223632812, d[2][0], 0.0);

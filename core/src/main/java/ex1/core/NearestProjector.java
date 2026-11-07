@@ -6,6 +6,12 @@ package ex1.core;
  */
 public final class NearestProjector extends Projector
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Rounds to the nearest voxel. */
     private static final double HALF = 0.5;
 
     @Override
@@ -13,9 +19,9 @@ public final class NearestProjector extends Projector
                              double dx, double dy, double dz,
                              int n, float[] out, int offset)
     {
-        int sx = volume.sizeX();
-        int sy = volume.sizeY();
-        int sz = volume.sizeZ();
+        int sx  = volume.sizeX();
+        int sy  = volume.sizeY();
+        int sz  = volume.sizeZ();
         int sxy = sx * sy;
 
         // Shifting by +0.5 turns rounding into truncation; the range checks below guarantee

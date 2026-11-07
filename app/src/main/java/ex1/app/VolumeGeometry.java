@@ -20,16 +20,22 @@ import java.util.Locale;
  */
 final class VolumeGeometry
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
     /** Anatomical axes = world axes. */
-    static final int LEFT = 0;
+    static final int LEFT      = 0;
     static final int POSTERIOR = 1;
-    static final int SUPERIOR = 2;
+    static final int SUPERIOR  = 2;
 
     /** The three standard views. */
-    static final int AXIAL = 0;
-    static final int CORONAL = 1;
+    static final int AXIAL    = 0;
+    static final int CORONAL  = 1;
     static final int SAGITTAL = 2;
 
+    /** Names of the views, and where each looks from. */
     private static final String[] VIEW_NAMES = {"Axial", "Coronal", "Sagittal"};
     private static final String[] VIEW_HINTS = {"from above", "from the front", "from the side"};
 
@@ -50,19 +56,27 @@ final class VolumeGeometry
         {"S", "I", "A", "P"},
     };
 
-    private final int[] size;
+    /** Size per index axis, the index-to-world matrix, its inverse, and the centre in indices. */
+    private final int[]      size;
     private final double[][] m;
     private final double[][] inv;
-    private final Vec3 centre;
+    private final Vec3       centre;
+
+    /** True when the file said which way the patient lies. */
     private final boolean known;
+
+    /** Per anatomical axis: the index axis closest to it, and its direction. */
     private final int[] indexAxisOf = new int[3];
-    private final int[] signOf = new int[3];
+    private final int[] signOf      = new int[3];   // +1 along the anatomical axis, -1 against it
+
+    /** Voxel size along each index axis, in mm. */
     private final double[] spacing = new double[3];
 
     /**
-     * @param (int[]) size volume size per index axis
-     * @param (double[][]) m index-to-world matrix, m[row][indexAxis]
-     * @param (boolean) known true when the anatomical orientation comes from the file
+     * Creates the geometry and its inverse matrix.
+     * @param (int[]) size Volume size per index axis.
+     * @param (double[][]) m Index-to-world matrix, m[row][indexAxis].
+     * @param (boolean) known True when the anatomical orientation comes from the file.
      */
     private VolumeGeometry(int[] size, double[][] m, boolean known)
     {
@@ -70,8 +84,8 @@ final class VolumeGeometry
         this.m = m;
         this.inv = invert(m);
         this.centre = new Vec3((size[0] - 1) / 2.0, (size[1] - 1) / 2.0, (size[2] - 1) / 2.0);
-        boolean permutation = true;
-        boolean[] used = new boolean[3];
+        boolean   permutation = true;
+        boolean[] used        = new boolean[3];
         for (int c = 0; c < 3; c++)
         {
             int best = 0;
@@ -107,20 +121,22 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (Volume) v volume (its header geometry, when any)
-     * @return the geometry
+     * Reads the geometry of a volume from its NRRD space directions; without them (or with a
+     * singular matrix) the index axes are used as they are.
+     * @param (Volume) v Volume (its header geometry, when any).
+     * @return (VolumeGeometry) The geometry.
      */
     static VolumeGeometry of(Volume v)
     {
-        int[] size = {v.sizeX(), v.sizeY(), v.sizeZ()};
+        int[]      size = {v.sizeX(), v.sizeY(), v.sizeZ()};
         double[][] dirs = v.spaceDirections();
         if (dirs == null || !invertible(transpose(dirs)))
         {
             return new VolumeGeometry(size, identity(), false);
         }
-        String space = v.space();
-        double sx = 1;
-        double sy = 1;
+        String  space = v.space();
+        double  sx    = 1;
+        double  sy    = 1;
         boolean known = false;
         if (space != null)
         {
@@ -151,11 +167,14 @@ final class VolumeGeometry
         return new VolumeGeometry(size, m, known);
     }
 
-    // ------------------------------------------------------------------ transforms
+    // ==========================================
+    //                 TRANSFORMS
+    // ==========================================
 
     /**
-     * @param (Vec3) index point in voxel indices
-     * @return the same point in world millimetres (volume centre = origin)
+     * Maps voxel indices to world millimetres.
+     * @param (Vec3) index Point in voxel indices.
+     * @return (Vec3) The same point in world millimetres (volume centre = origin).
      */
     Vec3 toWorld(Vec3 index)
     {
@@ -163,8 +182,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (Vec3) world point in world millimetres
-     * @return the same point in voxel indices
+     * Maps world millimetres back to voxel indices.
+     * @param (Vec3) world Point in world millimetres.
+     * @return (Vec3) The same point in voxel indices.
      */
     Vec3 toIndex(Vec3 world)
     {
@@ -172,8 +192,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (Vec3) worldDirection direction in world millimetres
-     * @return the direction in voxel indices (not normalised)
+     * Maps a direction (not a point) from world millimetres to voxel indices.
+     * @param (Vec3) worldDirection Direction in world millimetres.
+     * @return (Vec3) The direction in voxel indices (not normalised).
      */
     Vec3 directionToIndex(Vec3 worldDirection)
     {
@@ -182,9 +203,8 @@ final class VolumeGeometry
 
     /**
      * Gradients (and surface normals) transform with the inverse transpose.
-     *
-     * @param (Vec3) indexGradient gradient with respect to voxel indices
-     * @return the gradient in world coordinates (not normalised)
+     * @param (Vec3) indexGradient Gradient with respect to voxel indices.
+     * @return (Vec3) The gradient in world coordinates (not normalised).
      */
     Vec3 gradientToWorld(Vec3 indexGradient)
     {
@@ -195,7 +215,8 @@ final class VolumeGeometry
     }
 
     /**
-     * @return length of the volume's diagonal in world millimetres
+     * Measures the volume's diagonal in millimetres, to fit the camera to it.
+     * @return (double) Length of the volume's diagonal in world millimetres.
      */
     double worldDiagonal()
     {
@@ -206,10 +227,13 @@ final class VolumeGeometry
         return Math.max(a.dist(b), c.dist(d));
     }
 
-    // ------------------------------------------------------------------ anatomy
+    // ==========================================
+    //                  ANATOMY
+    // ==========================================
 
     /**
-     * @return true when the orientation (and the A/P/R/L/S/I labels) come from the file
+     * Tells whether the file said which way the patient lies.
+     * @return (boolean) True when the orientation (and the A/P/R/L/S/I labels) come from the file.
      */
     boolean known()
     {
@@ -217,8 +241,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) indexAxis 0, 1, 2
-     * @return physical spacing along that index axis (1 when unknown)
+     * Gives the voxel size along one index axis.
+     * @param (int) indexAxis 0, 1, 2.
+     * @return (double) Physical spacing along that index axis (1 when unknown).
      */
     double spacing(int indexAxis)
     {
@@ -226,8 +251,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view AXIAL, CORONAL or SAGITTAL
-     * @return the index axis held constant in that view
+     * Finds the index axis a view keeps constant (the one closest to the view's patient axis).
+     * @param (int) view AXIAL, CORONAL or SAGITTAL.
+     * @return (int) The index axis held constant in that view.
      */
     int constantAxis(int view)
     {
@@ -235,8 +261,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return the index axis along the screen's x
+     * Finds the index axis a view draws across the screen.
+     * @param (int) view View.
+     * @return (int) The index axis along the screen's x.
      */
     int horizontalAxis(int view)
     {
@@ -244,8 +271,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return the index axis along the screen's y
+     * Finds the index axis a view draws down the screen.
+     * @param (int) view View.
+     * @return (int) The index axis along the screen's y.
      */
     int verticalAxis(int view)
     {
@@ -253,8 +281,10 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return +1 when the horizontal index grows to the right, -1 when it grows to the left
+     * Gives which way the horizontal index runs on the screen, so the patient's right is on the
+     * screen's left as in 3D Slicer.
+     * @param (int) view View.
+     * @return (int) +1 when the horizontal index grows to the right, -1 when it grows to the left.
      */
     int horizontalStep(int view)
     {
@@ -262,8 +292,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return +1 when the vertical index grows downwards, -1 when it grows upwards
+     * Gives which way the vertical index runs on the screen, so superior or anterior is up.
+     * @param (int) view View.
+     * @return (int) +1 when the vertical index grows downwards, -1 when it grows upwards.
      */
     int verticalStep(int view)
     {
@@ -271,8 +302,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) indexAxis 0, 1, 2
-     * @return number of voxels along that axis
+     * Gives the number of voxels along one index axis.
+     * @param (int) indexAxis 0, 1, 2.
+     * @return (int) Number of voxels along that axis.
      */
     int size(int indexAxis)
     {
@@ -280,26 +312,26 @@ final class VolumeGeometry
     }
 
     /**
-     * The view's slice at index k of the constant axis, as a plane of the assignment whose image
-     * is oriented like the view: a1 = top-left, a2 = top-right, b = bottom-left, c = bottom-right.
-     *
-     * @param (int) view view
-     * @param (double) k index along the constant axis
-     * @return the rectangle
+     * Gives the view's slice at index k of the constant axis as a plane of the assignment whose
+     * image is oriented like the view: a1 = top-left, a2 = top-right, b = bottom-left, c =
+     * bottom-right.
+     * @param (int) view View.
+     * @param (double) k Index along the constant axis.
+     * @return (Plane) The rectangle.
      */
     Plane slicePlane(int view, double k)
     {
-        int h = horizontalAxis(view);
-        int v = verticalAxis(view);
-        int c = constantAxis(view);
-        double left = 0;
+        int    h     = horizontalAxis(view);
+        int    v     = verticalAxis(view);
+        int    c     = constantAxis(view);
+        double left  = 0;
         double right = size[h] - 1;
         if (horizontalStep(view) < 0)
         {
             left = size[h] - 1;
             right = 0;
         }
-        double top = 0;
+        double top    = 0;
         double bottom = size[v] - 1;
         if (verticalStep(view) < 0)
         {
@@ -314,8 +346,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return the view's name, e.g. "Axial"
+     * Gives a view's name.
+     * @param (int) view View.
+     * @return (String) The view's name, e.g. "Axial".
      */
     static String name(int view)
     {
@@ -323,8 +356,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return how the view looks, e.g. "from above"
+     * Gives a few words on where a view looks from.
+     * @param (int) view View.
+     * @return (String) How the view looks, e.g. "from above".
      */
     static String hint(int view)
     {
@@ -332,8 +366,10 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (int) view view
-     * @return top, bottom, left, right labels, or null when the orientation is not known
+     * Gives the patient directions at the edges of a view.
+     * @param (int) view View.
+     * @return (String[]) Top, bottom, left, right labels, or null when the orientation is not
+     *                    known.
      */
     String[] labels(int view)
     {
@@ -344,16 +380,19 @@ final class VolumeGeometry
         return LABELS[view];
     }
 
-    // ------------------------------------------------------------------ helpers
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (int) a1 first axis
-     * @param (double) v1 its value
-     * @param (int) a2 second axis
-     * @param (double) v2 its value
-     * @param (int) a3 third axis
-     * @param (double) v3 its value
-     * @return the point with those coordinates
+     * Builds a point from three (axis, value) pairs given in any axis order.
+     * @param (int) a1 First axis.
+     * @param (double) v1 Its value.
+     * @param (int) a2 Second axis.
+     * @param (double) v2 Its value.
+     * @param (int) a3 Third axis.
+     * @param (double) v3 Its value.
+     * @return (Vec3) The point with those coordinates.
      */
     private static Vec3 point(int a1, double v1, int a2, double v2, int a3, double v3)
     {
@@ -365,9 +404,10 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (double[][]) a matrix
-     * @param (Vec3) v vector
-     * @return a * v
+     * Multiplies a 3x3 matrix by a vector.
+     * @param (double[][]) a Matrix.
+     * @param (Vec3) v Vector.
+     * @return (Vec3) A * v.
      */
     private static Vec3 mul(double[][] a, Vec3 v)
     {
@@ -377,7 +417,8 @@ final class VolumeGeometry
     }
 
     /**
-     * @return the 3x3 identity
+     * Makes the 3x3 identity matrix.
+     * @return (double[][]) The 3x3 identity.
      */
     private static double[][] identity()
     {
@@ -385,8 +426,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (double[][]) a matrix
-     * @return its transpose
+     * Transposes a 3x3 matrix.
+     * @param (double[][]) a Matrix.
+     * @return (double[][]) Its transpose.
      */
     private static double[][] transpose(double[][] a)
     {
@@ -402,8 +444,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (double[][]) a matrix
-     * @return its determinant
+     * Computes the determinant of a 3x3 matrix.
+     * @param (double[][]) a Matrix.
+     * @return (double) Its determinant.
      */
     private static double det(double[][] a)
     {
@@ -413,8 +456,9 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (double[][]) a matrix
-     * @return true when the matrix can be inverted
+     * Tells whether a 3x3 matrix can be inverted safely (its determinant is not almost zero).
+     * @param (double[][]) a Matrix.
+     * @return (boolean) True when the matrix can be inverted.
      */
     private static boolean invertible(double[][] a)
     {
@@ -423,12 +467,13 @@ final class VolumeGeometry
     }
 
     /**
-     * @param (double[][]) a invertible matrix
-     * @return its inverse
+     * Inverts a 3x3 matrix by its adjugate.
+     * @param (double[][]) a Invertible matrix.
+     * @return (double[][]) Its inverse.
      */
     private static double[][] invert(double[][] a)
     {
-        double d = det(a);
+        double     d = det(a);
         double[][] r = new double[3][3];
         r[0][0] = (a[1][1] * a[2][2] - a[1][2] * a[2][1]) / d;
         r[0][1] = (a[0][2] * a[2][1] - a[0][1] * a[2][2]) / d;

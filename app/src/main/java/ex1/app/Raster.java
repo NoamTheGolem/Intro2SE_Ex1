@@ -11,9 +11,25 @@ import java.util.Arrays;
  */
 final class Raster
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** A line this far in front of a surface still shows: a line on the surface is not hidden. */
+    private static final double LINE_DEPTH_BIAS = 0.5;
+
+    /** Size, the image on the screen, its pixels, and the depth of every pixel. */
+    private final int           width;
+    private final int           height;
+    private final BufferedImage image;
+    private final int[]         pixels;
+    private final float[]       depth;
+
     /** A screen-space vertex: position, depth (smaller = nearer) and texture coordinates. */
     static final class Vertex
     {
+        /** Screen position, depth, and texture coordinates. */
         final double x;
         final double y;
         final double z;
@@ -21,11 +37,12 @@ final class Raster
         final double v;
 
         /**
-         * @param (double) x screen x
-         * @param (double) y screen y
-         * @param (double) z depth
-         * @param (double) u texture column
-         * @param (double) v texture row
+         * Creates a vertex.
+         * @param (double) x Screen x.
+         * @param (double) y Screen y.
+         * @param (double) z Depth.
+         * @param (double) u Texture column.
+         * @param (double) v Texture row.
          */
         Vertex(double x, double y, double z, double u, double v)
         {
@@ -40,14 +57,16 @@ final class Raster
     /** An ARGB texture. */
     static final class Texture
     {
-        final int width;
-        final int height;
+        /** Size and pixels (ARGB, row-major). */
+        final int   width;
+        final int   height;
         final int[] argb;
 
         /**
-         * @param (int) width columns
-         * @param (int) height rows
-         * @param (int[]) argb pixels, row-major
+         * Creates a texture over an existing pixel array.
+         * @param (int) width Columns.
+         * @param (int) height Rows.
+         * @param (int[]) argb Pixels, row-major.
          */
         Texture(int width, int height, int[] argb)
         {
@@ -57,33 +76,36 @@ final class Raster
         }
 
         /**
-         * @param (byte[]) grey grey pixels
-         * @param (int) width columns
-         * @param (int) height rows
-         * @param (int) tint colour mixed into the grey (0 = none), format 0xRRGGBB
-         * @param (double) tintAmount 0..1
-         * @return opaque texture
+         * Turns grey pixels into an opaque texture, optionally tinted (bright pixels take more of
+         * the tint than dark ones).
+         * @param (byte[]) grey Grey pixels.
+         * @param (int) width Columns.
+         * @param (int) height Rows.
+         * @param (int) tint Colour mixed into the grey (0 = none), format 0xRRGGBB.
+         * @param (double) tintAmount 0..1.
+         * @return (Texture) Opaque texture.
          */
         static Texture fromGrey(byte[] grey, int width, int height, int tint, double tintAmount)
         {
             int[] px = new int[width * height];
-            int tr = (tint >> 16) & 0xFF;
-            int tg = (tint >> 8) & 0xFF;
-            int tb = tint & 0xFF;
+            int   tr = (tint >> 16) & 0xFF;
+            int   tg = (tint >> 8) & 0xFF;
+            int   tb = tint & 0xFF;
             for (int i = 0; i < px.length; i++)
             {
-                int g = grey[i] & 0xFF;
-                int r = (int) (g * (1 - tintAmount) + tr * tintAmount * (0.35 + 0.65 * g / 255.0));
+                int g  = grey[i] & 0xFF;
+                int r  = (int) (g * (1 - tintAmount) + tr * tintAmount * (0.35 + 0.65 * g / 255.0));
                 int gg = (int) (g * (1 - tintAmount) + tg * tintAmount * (0.35 + 0.65 * g / 255.0));
-                int b = (int) (g * (1 - tintAmount) + tb * tintAmount * (0.35 + 0.65 * g / 255.0));
+                int b  = (int) (g * (1 - tintAmount) + tb * tintAmount * (0.35 + 0.65 * g / 255.0));
                 px[i] = 0xFF000000 | (clamp(r) << 16) | (clamp(gg) << 8) | clamp(b);
             }
             return new Texture(width, height, px);
         }
 
         /**
-         * @param (int) c component
-         * @return clamped to 0..255
+         * Keeps a colour component in range.
+         * @param (int) c Component.
+         * @return (int) Clamped to 0..255.
          */
         private static int clamp(int c)
         {
@@ -91,17 +113,10 @@ final class Raster
         }
     }
 
-    private static final double LINE_DEPTH_BIAS = 0.5;
-
-    private final int width;
-    private final int height;
-    private final BufferedImage image;
-    private final int[] pixels;
-    private final float[] depth;
-
     /**
-     * @param (int) width image width
-     * @param (int) height image height
+     * Creates the colour and depth buffers; the colour buffer is the image's own pixel array.
+     * @param (int) width Image width.
+     * @param (int) height Image height.
      */
     Raster(int width, int height)
     {
@@ -113,7 +128,8 @@ final class Raster
     }
 
     /**
-     * @param (int) background ARGB fill colour
+     * Fills the image with a colour and empties the depth buffer.
+     * @param (int) background ARGB fill colour.
      */
     void clear(int background)
     {
@@ -122,7 +138,9 @@ final class Raster
     }
 
     /**
-     * @return the ARGB pixels (shared with the image), for renderers that fill them directly
+     * Gives direct access to the pixels.
+     * @return (int[]) The ARGB pixels (shared with the image), for renderers that fill them
+     *                 directly.
      */
     int[] pixels()
     {
@@ -130,7 +148,8 @@ final class Raster
     }
 
     /**
-     * @return the depth buffer (smaller = nearer), shared
+     * Gives direct access to the depth buffer.
+     * @return (float[]) The depth buffer (smaller = nearer), shared.
      */
     float[] depths()
     {
@@ -138,7 +157,8 @@ final class Raster
     }
 
     /**
-     * @return the rendered image (shared buffer)
+     * Gives the image to draw on the screen.
+     * @return (BufferedImage) The rendered image (shared buffer).
      */
     BufferedImage image()
     {
@@ -146,7 +166,8 @@ final class Raster
     }
 
     /**
-     * @return width
+     * Gives the width in pixels.
+     * @return (int) Width.
      */
     int width()
     {
@@ -154,22 +175,26 @@ final class Raster
     }
 
     /**
-     * @return height
+     * Gives the height in pixels.
+     * @return (int) Height.
      */
     int height()
     {
         return height;
     }
 
+    // ==========================================
+    //                  DRAWING
+    // ==========================================
+
     /**
      * Draws a textured triangle with a z-test. Texture coordinates are in texels; samples
      * outside the texture are skipped (so a trapezoid strip can address only its own span).
-     *
-     * @param (Vertex) a first vertex
-     * @param (Vertex) b second vertex
-     * @param (Vertex) c third vertex
-     * @param (Texture) tex texture
-     * @param (double) alpha opacity 0..1
+     * @param (Vertex) a First vertex.
+     * @param (Vertex) b Second vertex.
+     * @param (Vertex) c Third vertex.
+     * @param (Texture) tex Texture.
+     * @param (double) alpha Opacity 0..1.
      */
     void triangle(Vertex a, Vertex b, Vertex c, Texture tex, double alpha)
     {
@@ -187,11 +212,11 @@ final class Raster
             return;
         }
         double inv = 1.0 / area;
-        int ia = (int) Math.round(alpha * 255);
+        int    ia  = (int) Math.round(alpha * 255);
         for (int y = minY; y <= maxY; y++)
         {
-            double py = y + 0.5;
-            int row = y * width;
+            double py  = y + 0.5;
+            int    row = y * width;
             for (int x = minX; x <= maxX; x++)
             {
                 double px = x + 0.5;
@@ -203,7 +228,7 @@ final class Raster
                     continue;
                 }
                 float z = (float) (w0 * a.z + w1 * b.z + w2 * c.z);
-                int i = row + x;
+                int   i = row + x;
                 if (z >= depth[i])
                 {
                     continue;
@@ -230,36 +255,34 @@ final class Raster
 
     /**
      * Draws a solid-colour triangle (no texture) with a z-test.
-     *
-     * @param (Vertex) a first vertex
-     * @param (Vertex) b second vertex
-     * @param (Vertex) c third vertex
-     * @param (int) argb colour
-     * @param (double) alpha opacity 0..1
+     * @param (Vertex) a First vertex.
+     * @param (Vertex) b Second vertex.
+     * @param (Vertex) c Third vertex.
+     * @param (int) argb Colour.
+     * @param (double) alpha Opacity 0..1.
      */
     void solidTriangle(Vertex a, Vertex b, Vertex c, int argb, double alpha)
     {
-        int[] one = {argb};
+        int[]   one = {argb};
         Texture tex = new Texture(1, 1, one);
         triangle(new Vertex(a.x, a.y, a.z, 0.5, 0.5), new Vertex(b.x, b.y, b.z, 0.5, 0.5),
                 new Vertex(c.x, c.y, c.z, 0.5, 0.5), tex, alpha);
     }
 
     /**
-     * Depth-tested line (Bresenham-free DDA), slightly biased towards the viewer so edges drawn
-     * on a surface stay visible.
-     *
-     * @param (Vertex) a start
-     * @param (Vertex) b end
-     * @param (int) argb colour
-     * @param (int) thickness 1 or 2
-     * @param (boolean) depthTest false draws over everything
+     * Draws a depth-tested line (Bresenham-free DDA), slightly biased towards the viewer so edges
+     * drawn on a surface stay visible.
+     * @param (Vertex) a Start.
+     * @param (Vertex) b End.
+     * @param (int) argb Colour.
+     * @param (int) thickness 1 or 2.
+     * @param (boolean) depthTest False draws over everything.
      */
     void line(Vertex a, Vertex b, int argb, int thickness, boolean depthTest)
     {
-        double dx = b.x - a.x;
-        double dy = b.y - a.y;
-        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+        double dx    = b.x - a.x;
+        double dy    = b.y - a.y;
+        int    steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
         if (steps == 0)
         {
             steps = 1;
@@ -267,9 +290,9 @@ final class Raster
         for (int s = 0; s <= steps; s++)
         {
             double t = s / (double) steps;
-            int x = (int) Math.round(a.x + dx * t);
-            int y = (int) Math.round(a.y + dy * t);
-            float z = (float) (a.z + (b.z - a.z) * t - LINE_DEPTH_BIAS);
+            int    x = (int) Math.round(a.x + dx * t);
+            int    y = (int) Math.round(a.y + dy * t);
+            float  z = (float) (a.z + (b.z - a.z) * t - LINE_DEPTH_BIAS);
             for (int oy = 0; oy < thickness; oy++)
             {
                 for (int ox = 0; ox < thickness; ox++)
@@ -280,12 +303,17 @@ final class Raster
         }
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (int) x column
-     * @param (int) y row
-     * @param (float) z depth
-     * @param (int) argb colour
-     * @param (boolean) depthTest whether to respect the z-buffer
+     * Sets one pixel, behind nearer things when the depth test is on.
+     * @param (int) x Column.
+     * @param (int) y Row.
+     * @param (float) z Depth.
+     * @param (int) argb Colour.
+     * @param (boolean) depthTest Whether to respect the z-buffer.
      */
     private void plot(int x, int y, float z, int argb, boolean depthTest)
     {
@@ -306,11 +334,13 @@ final class Raster
     }
 
     /**
-     * @param (Vertex) a edge start
-     * @param (Vertex) b edge end
-     * @param (double) px point x
-     * @param (double) py point y
-     * @return signed doubled area of (a, b, p)
+     * Computes the edge function of a triangle side: which side of a-b the point p is on, and how
+     * far.
+     * @param (Vertex) a Edge start.
+     * @param (Vertex) b Edge end.
+     * @param (double) px Point x.
+     * @param (double) py Point y.
+     * @return (double) Signed doubled area of (a, b, p).
      */
     private static double edge(Vertex a, Vertex b, double px, double py)
     {
@@ -318,17 +348,18 @@ final class Raster
     }
 
     /**
-     * @param (int) dst destination ARGB
-     * @param (int) src source ARGB
-     * @param (int) alpha 0..255 weight of src
-     * @return blended colour
+     * Mixes two colours.
+     * @param (int) dst Destination ARGB.
+     * @param (int) src Source ARGB.
+     * @param (int) alpha 0..255 weight of src.
+     * @return (int) Blended colour.
      */
     private static int blend(int dst, int src, int alpha)
     {
         int ia = 255 - alpha;
-        int r = (((src >> 16) & 0xFF) * alpha + ((dst >> 16) & 0xFF) * ia) / 255;
-        int g = (((src >> 8) & 0xFF) * alpha + ((dst >> 8) & 0xFF) * ia) / 255;
-        int b = ((src & 0xFF) * alpha + (dst & 0xFF) * ia) / 255;
+        int r  = (((src >> 16) & 0xFF) * alpha + ((dst >> 16) & 0xFF) * ia) / 255;
+        int g  = (((src >> 8) & 0xFF) * alpha + ((dst >> 8) & 0xFF) * ia) / 255;
+        int b  = ((src & 0xFF) * alpha + (dst & 0xFF) * ia) / 255;
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 }

@@ -21,22 +21,35 @@ import javax.swing.JComponent;
  */
 final class SliceView extends JComponent
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Version of the serialized form (Swing components are Serializable). */
     private static final long serialVersionUID = 1L;
-    private static final int MARGIN = 18;
+
+    /** Space around the cut and under it, for the caption. */
+    private static final int MARGIN        = 18;
     private static final int CAPTION_SPACE = 20;
+
+    /** The red edge of a black frame, so it is told apart from the background. */
     private static final Color BLACK_FRAME_BORDER = new Color(0xC03030);
+
+    /** The FPS pill in the corner. */
     private static final int PILL_HEIGHT = 26;
-    private static final int PILL_PAD = 11;
-    private static final int PILL_DOT = 7;
-    private static final int PILL_INSET = 10;
-    private static final int PILL_ALPHA = 225;
+    private static final int PILL_PAD    = 11;
+    private static final int PILL_DOT    = 7;
+    private static final int PILL_INSET  = 10;    // from the cut's corner
+    private static final int PILL_ALPHA  = 225;   // of 255: the cut shows through a little
 
+    /** On show: the cut, its caption, its shape (for the corner names) and the FPS (or null). */
     private transient BufferedImage image;
-    private String caption = "";
-    private boolean triangle = true;
-    private String fps;
+    private String                  caption  = "";
+    private boolean                 triangle = true;
+    private String                  fps;
 
-    /** Dark panel. */
+    /** Creates the dark panel. */
     SliceView()
     {
         setOpaque(true);
@@ -45,10 +58,11 @@ final class SliceView extends JComponent
     }
 
     /**
-     * @param (byte[]) grey cross-section pixels, or null to clear
-     * @param (int) width columns
-     * @param (int) height rows
-     * @param (String) text caption shown under the image
+     * Shows a new cut (or a black frame, when grey is null and the caption says why).
+     * @param (byte[]) grey Cross-section pixels, or null to clear.
+     * @param (int) width Columns.
+     * @param (int) height Rows.
+     * @param (String) text Caption shown under the image.
      */
     void setImage(byte[] grey, int width, int height, String text)
     {
@@ -70,7 +84,8 @@ final class SliceView extends JComponent
     }
 
     /**
-     * @param (boolean) isTriangle true labels the apex a, false labels a1 and a2
+     * Chooses the corner names for a triangle or a trapezoid.
+     * @param (boolean) isTriangle True labels the apex a, false labels a1 and a2.
      */
     void setCornerLabels(boolean isTriangle)
     {
@@ -82,7 +97,8 @@ final class SliceView extends JComponent
     }
 
     /**
-     * @param (String) text the FPS to show on the picture, e.g. "2,110 FPS"; null shows none
+     * Shows or hides the FPS on the picture.
+     * @param (String) text The FPS to show on the picture, e.g. "2,110 FPS"; null shows none.
      */
     void setFps(String text)
     {
@@ -90,6 +106,11 @@ final class SliceView extends JComponent
         repaint();
     }
 
+    /**
+     * Draws the cut as large as it fits, in its amber frame with the corner names, the caption and
+     * the FPS; a bad plane shows the black frame the video gets, with the reason.
+     * @param (Graphics) g0 Graphics of the view.
+     */
     @Override
     protected void paintComponent(Graphics g0)
     {
@@ -102,8 +123,8 @@ final class SliceView extends JComponent
         {
             // A bad plane or row: the video gets a black frame here, so show one, with the reason.
             int side = Math.max(16, Math.min(getWidth() - 2 * MARGIN, getHeight() - 2 * MARGIN - CAPTION_SPACE));
-            int x = (getWidth() - side) / 2;
-            int y = (getHeight() - CAPTION_SPACE - side) / 2;
+            int x    = (getWidth() - side) / 2;
+            int y    = (getHeight() - CAPTION_SPACE - side) / 2;
             g.setColor(Color.BLACK);
             g.fillRect(x, y, side, side);
             g.setColor(BLACK_FRAME_BORDER);
@@ -124,13 +145,13 @@ final class SliceView extends JComponent
             g.dispose();
             return;
         }
-        int availW = getWidth() - 2 * MARGIN;
-        int availH = getHeight() - 2 * MARGIN - CAPTION_SPACE;
-        double scale = Math.min(availW / (double) image.getWidth(), availH / (double) image.getHeight());
-        int w = Math.max(1, (int) (image.getWidth() * scale));
-        int h = Math.max(1, (int) (image.getHeight() * scale));
-        int x = (getWidth() - w) / 2;
-        int y = (getHeight() - CAPTION_SPACE - h) / 2;
+        int    availW = getWidth() - 2 * MARGIN;
+        int    availH = getHeight() - 2 * MARGIN - CAPTION_SPACE;
+        double scale  = Math.min(availW / (double) image.getWidth(), availH / (double) image.getHeight());
+        int    w      = Math.max(1, (int) (image.getWidth() * scale));
+        int    h      = Math.max(1, (int) (image.getHeight() * scale));
+        int    x      = (getWidth() - w) / 2;
+        int    y      = (getHeight() - CAPTION_SPACE - h) / 2;
         if (scale >= 1.0)
         {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -165,11 +186,10 @@ final class SliceView extends JComponent
     }
 
     /**
-     * The FPS label over the picture: a dark pill with an amber dot, as in the toolbar.
-     *
-     * @param (Graphics2D) g graphics
-     * @param (int) x left
-     * @param (int) y top
+     * Draws the FPS label over the picture: a dark pill with an amber dot, as in the toolbar.
+     * @param (Graphics2D) g Graphics.
+     * @param (int) x Left.
+     * @param (int) y Top.
      */
     private void drawFps(Graphics2D g, int x, int y)
     {
@@ -177,7 +197,7 @@ final class SliceView extends JComponent
         p.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         p.setFont(Theme.semibold(Theme.TEXT_SIZE));
         FontMetrics fm = p.getFontMetrics();
-        int w = PILL_PAD * 2 + PILL_DOT + PILL_PAD / 2 + 2 + fm.stringWidth(fps);
+        int         w  = PILL_PAD * 2 + PILL_DOT + PILL_PAD / 2 + 2 + fm.stringWidth(fps);
         p.setColor(Theme.alpha(Theme.CHROME, PILL_ALPHA));
         p.fillRoundRect(x, y, w, PILL_HEIGHT, PILL_HEIGHT, PILL_HEIGHT);
         p.setColor(Theme.PLANE);
@@ -188,7 +208,8 @@ final class SliceView extends JComponent
     }
 
     /**
-     * @return the FPS shown on the picture, or null
+     * Gives the FPS on show.
+     * @return (String) The FPS shown on the picture, or null.
      */
     String fps()
     {

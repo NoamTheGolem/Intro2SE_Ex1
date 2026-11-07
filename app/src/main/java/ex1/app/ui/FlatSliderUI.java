@@ -1,5 +1,6 @@
 package ex1.app.ui;
 
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -16,11 +17,18 @@ import javax.swing.plaf.basic.BasicSliderUI;
  */
 public final class FlatSliderUI extends BasicSliderUI
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Thickness of the track and diameter of the thumb, in pixels. */
     private static final int TRACK = 4;
     private static final int THUMB = 12;
 
     /**
-     * @param (JSlider) s the slider
+     * Creates the look of a slider.
+     * @param (JSlider) s The slider.
      */
     public FlatSliderUI(JSlider s)
     {
@@ -28,26 +36,39 @@ public final class FlatSliderUI extends BasicSliderUI
     }
 
     /**
-     * @param (JComponent) c the slider
-     * @return a new UI
+     * Creates the look of one slider (called by Swing).
+     * @param (JComponent) c The slider.
+     * @return (ComponentUI) A new UI.
      */
     public static ComponentUI createUI(JComponent c)
     {
         return new FlatSliderUI((JSlider) c);
     }
 
+    /**
+     * Gives the round thumb's size, with a pixel around it for the smooth edge.
+     * @return (Dimension) The thumb's size.
+     */
     @Override
     protected Dimension getThumbSize()
     {
         return new Dimension(THUMB + 2, THUMB + 2);
     }
 
+    /**
+     * Paints nothing: the thumb itself shows where the slider is, no dotted focus box.
+     * @param (Graphics) g Graphics of the slider.
+     */
     @Override
     public void paintFocus(Graphics g)
     {
         // The thumb itself shows where the slider is; no dotted focus box.
     }
 
+    /**
+     * Paints the thin track, lit up to the thumb.
+     * @param (Graphics) g Graphics of the slider.
+     */
     @Override
     public void paintTrack(Graphics g)
     {
@@ -74,6 +95,10 @@ public final class FlatSliderUI extends BasicSliderUI
         g2.dispose();
     }
 
+    /**
+     * Paints the round thumb (dim when the slider is disabled).
+     * @param (Graphics) g Graphics of the slider.
+     */
     @Override
     public void paintThumb(Graphics g)
     {
@@ -90,9 +115,10 @@ public final class FlatSliderUI extends BasicSliderUI
     }
 
     /**
-     * @return the colour of the track up to the thumb
+     * Chooses the colour of the track behind the thumb.
+     * @return (Color) The colour of the track up to the thumb.
      */
-    private java.awt.Color litColour()
+    private Color litColour()
     {
         if (slider.isEnabled())
         {

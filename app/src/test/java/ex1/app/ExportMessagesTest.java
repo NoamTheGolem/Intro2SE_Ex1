@@ -18,8 +18,19 @@ import org.junit.rules.TemporaryFolder;
 public class ExportMessagesTest
 {
     @Rule
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Files of one test, deleted after it. */
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /**
+     * Checks the name the export proposes: MRHead_cut.mp4 while it is free, then MRHead_cut_2.mp4,
+     * then _3 (TC-114).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void proposedNameIsNeverTaken() throws IOException
     {
@@ -31,6 +42,10 @@ public class ExportMessagesTest
         assertEquals("MRHead_cut_3.mp4", StudioApp.freeName(dir, "MRHead_cut", ".mp4").getName());
     }
 
+    /**
+     * Checks that a failed export is explained in plain words (a folder Windows protects, a video
+     * open in a player, anything else), with the technical detail below (TC-115).
+     */
     @Test
     public void failuresAreExplainedWithTheTechnicalDetailBelow()
     {

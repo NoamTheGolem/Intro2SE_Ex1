@@ -37,26 +37,37 @@ import java.util.List;
  */
 public final class PlaneCsvReader
 {
-    private static final int TRIANGLE_POINTS = 3;
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Points of a triangle and of a trapezoid, and coordinates per point. */
+    private static final int TRIANGLE_POINTS  = 3;
     private static final int TRAPEZOID_POINTS = 4;
-    private static final int COORDS = 3;
+    private static final int COORDS           = 3;
 
     /** One data row of the CSV = one frame. */
     public static final class Entry
     {
         /** 1-based data row number (header, blank and comment lines not counted) = frame number. */
         public final int row;
+
         /** 1-based line number in the file. */
         public final int line;
+
         /** The plane to project, or null when the row cannot be projected (black frame). */
         public final Plane plane;
+
+        /** What is doubtful or wrong in the row, for the messages. */
         public final List<String> warnings;
 
         /**
-         * @param (int) row 1-based data row number
-         * @param (int) line 1-based file line number
-         * @param (Plane) plane parsed plane or null
-         * @param (List) warnings problems found in this row
+         * Creates the entry of one row.
+         * @param (int) row 1-based data row number.
+         * @param (int) line 1-based file line number.
+         * @param (Plane) plane Parsed plane or null.
+         * @param (List<String>) warnings Problems found in this row.
          */
         Entry(int row, int line, Plane plane, List<String> warnings)
         {
@@ -67,7 +78,8 @@ public final class PlaneCsvReader
         }
 
         /**
-         * @return "row N (line M)" for messages
+         * Says where the row is in the file.
+         * @return (String) "row N (line M)" for messages.
          */
         public String where()
         {
@@ -78,11 +90,13 @@ public final class PlaneCsvReader
     /** All rows in file order, plus fatal errors (only when nothing usable was found). */
     public static final class Result
     {
-        public final List<Entry> rows = new ArrayList<Entry>();
+        /** One entry per data row, in the file's order, and what makes the file unusable. */
+        public final List<Entry>  rows   = new ArrayList<Entry>();
         public final List<String> errors = new ArrayList<String>();
 
         /**
-         * @return true when there is at least one row and no fatal error
+         * Tells whether a video can be made from the file.
+         * @return (boolean) True when there is at least one row and no fatal error.
          */
         public boolean isValid()
         {
@@ -90,7 +104,8 @@ public final class PlaneCsvReader
         }
 
         /**
-         * @return every row warning, prefixed with "row N (line M): "
+         * Collects the warnings of every row.
+         * @return (List<String>) Every row warning, prefixed with "row N (line M): ".
          */
         public List<String> warnings()
         {
@@ -107,7 +122,8 @@ public final class PlaneCsvReader
         }
 
         /**
-         * @return the planes in order; null entries mean "black frame"
+         * Lists the plane of every row.
+         * @return (List<Plane>) The planes in order; null entries mean "black frame".
          */
         public List<Plane> planes()
         {
@@ -120,15 +136,21 @@ public final class PlaneCsvReader
         }
     }
 
+    /** Static methods only; never instantiated. */
     private PlaneCsvReader()
     {
     }
 
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
+
     /**
-     * @param (File) file CSV file
-     * @param (double) eps geometric tolerance for plane validation
-     * @return rows and errors
-     * @throws (IOException) if the file cannot be read
+     * Reads a CSV file of planes.
+     * @param (File) file CSV file.
+     * @param (double) eps Geometric tolerance for plane validation.
+     * @return (Result) Rows and errors.
+     * @throws (IOException) If the file cannot be read.
      */
     public static Result read(File file, double eps) throws IOException
     {
@@ -144,18 +166,19 @@ public final class PlaneCsvReader
     }
 
     /**
-     * @param (Reader) reader CSV text
-     * @param (double) eps geometric tolerance for plane validation
-     * @return rows and errors
-     * @throws (IOException) on read errors
+     * Reads CSV text of planes: one entry per data row, header and empty lines skipped.
+     * @param (Reader) reader CSV text.
+     * @param (double) eps Geometric tolerance for plane validation.
+     * @return (Result) Rows and errors.
+     * @throws (IOException) On read errors.
      */
     public static Result read(Reader reader, double eps) throws IOException
     {
-        BufferedReader in = new BufferedReader(reader);
-        Result result = new Result();
-        int lineNo = 0;
-        boolean seenData = false;
-        String line = in.readLine();
+        BufferedReader in       = new BufferedReader(reader);
+        Result         result   = new Result();
+        int            lineNo   = 0;
+        boolean        seenData = false;
+        String         line     = in.readLine();
         while (line != null)
         {
             lineNo++;
@@ -195,13 +218,19 @@ public final class PlaneCsvReader
         return result;
     }
 
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
+
     /**
-     * @param (int) row data row number
-     * @param (int) lineNo file line number
-     * @param (String) text the line, for messages
-     * @param (double[]) values parsed numbers, or null if the line has non-numbers
-     * @param (double) eps geometric tolerance
-     * @return the row entry (plane may be null)
+     * Turns the numbers of one row into its entry: the plane (or null for a black frame) and the
+     * warnings that say why.
+     * @param (int) row Data row number.
+     * @param (int) lineNo File line number.
+     * @param (String) text The line, for messages.
+     * @param (double[]) values Parsed numbers, or null if the line has non-numbers.
+     * @param (double) eps Geometric tolerance.
+     * @return (Entry) The row entry (plane may be null).
      */
     private static Entry toEntry(int row, int lineNo, String text, double[] values, double eps)
     {
@@ -217,7 +246,7 @@ public final class PlaneCsvReader
             return new Entry(row, lineNo, null, warnings);
         }
         PlaneResolver.Resolved resolved = PlaneResolver.resolve(coords, eps);
-        Plane plane = resolved.plane;
+        Plane                  plane    = resolved.plane;
         if (resolved.reordering != null)
         {
             warnings.add(resolved.reordering);
@@ -243,14 +272,13 @@ public final class PlaneCsvReader
      * Strips the leading point count of the course format. The count must match the points that
      * follow: "4" with only the 9 numbers of a triangle is a bad row, not a guess (the course's
      * edge-case file expects a black frame for it).
-     *
-     * @param (double[]) v all numbers of the row
-     * @param (List) warnings receives the reason when the row is bad
-     * @return the 9 or 12 coordinates, or null for a bad row
+     * @param (double[]) v All numbers of the row.
+     * @param (List<String>) warnings Receives the reason when the row is bad.
+     * @return (double[]) The 9 or 12 coordinates, or null for a bad row.
      */
     private static double[] coordinates(double[] v, List<String> warnings)
     {
-        int triangleCoords = TRIANGLE_POINTS * COORDS;
+        int triangleCoords  = TRIANGLE_POINTS * COORDS;
         int trapezoidCoords = TRAPEZOID_POINTS * COORDS;
         if (v.length == triangleCoords || v.length == trapezoidCoords)
         {
@@ -272,9 +300,14 @@ public final class PlaneCsvReader
         return tail(v);
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (double) count first cell
-     * @return "4" rather than "4.0"
+     * Writes the point count of a row for a message.
+     * @param (double) count First cell.
+     * @return (String) "4" rather than "4.0".
      */
     private static String formatCount(double count)
     {
@@ -286,8 +319,9 @@ public final class PlaneCsvReader
     }
 
     /**
-     * @param (double[]) v array
-     * @return v without its first element
+     * Drops the first number of a row (the point count).
+     * @param (double[]) v Array.
+     * @return (double[]) The numbers without the first one.
      */
     private static double[] tail(double[] v)
     {
@@ -297,8 +331,9 @@ public final class PlaneCsvReader
     }
 
     /**
-     * @param (String) text line
-     * @return true for lines like ",,,," (empty spreadsheet rows)
+     * Tells whether a line holds nothing but commas and spaces.
+     * @param (String) text Line.
+     * @return (boolean) True for lines like ",,,," (empty spreadsheet rows).
      */
     private static boolean isOnlySeparators(String text)
     {
@@ -314,8 +349,9 @@ public final class PlaneCsvReader
     }
 
     /**
-     * @param (String[]) tokens split line (empty tokens are ignored)
-     * @return numbers, or null if any token is not a number
+     * Parses the cells of a row as numbers.
+     * @param (String[]) tokens Split line (empty tokens are ignored).
+     * @return (double[]) Numbers, or null if any token is not a number.
      */
     private static double[] parse(String[] tokens)
     {
@@ -328,7 +364,7 @@ public final class PlaneCsvReader
             }
         }
         double[] values = new double[count];
-        int k = 0;
+        int      k      = 0;
         for (int i = 0; i < tokens.length; i++)
         {
             if (tokens[i].isEmpty())

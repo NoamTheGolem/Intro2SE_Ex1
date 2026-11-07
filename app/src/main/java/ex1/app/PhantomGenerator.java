@@ -24,26 +24,43 @@ import java.util.Locale;
  */
 public final class PhantomGenerator
 {
-    private static final int CHECKER_BLOCK = 16;
-    private static final int RINGS = 6;
 
-    private static final int DICE_SX = 200;
-    private static final int DICE_SY = 180;
-    private static final int DICE_SZ = 160;
-    private static final int[] DICE_MIN = {40, 30, 20};
-    private static final int[] DICE_MAX = {159, 149, 139};
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Shapes of the phantoms. */
+    private static final int CHECKER_BLOCK = 16;   // voxels per checkerboard square
+    private static final int RINGS         = 6;    // shells of the spheres phantom, brightest inside
+
+    /** The die of the lecturer's edge_cases.csv: the volume, the cube in it, and its pips. */
+    private static final int   DICE_SX  = 200;
+    private static final int   DICE_SY  = 180;
+    private static final int   DICE_SZ  = 160;
+    private static final int[] DICE_MIN = {40, 30, 20};      // first voxel of the cube per axis
+    private static final int[] DICE_MAX = {159, 149, 139};   // last voxel of the cube per axis
+
+    /** Values of the body and of the pips (the pips are brighter). */
     private static final double DICE_BODY = 100000;
-    private static final double DICE_PIP = 200000;
-    private static final double PIP_RADIUS = 7.0;
-    private static final int PIP_DEPTH = 4;
-    private static final double PIP_OFFSET = 30.0;
+    private static final double DICE_PIP  = 200000;
 
+    /** Size and spacing of the pips, in voxels. */
+    private static final double PIP_RADIUS = 7.0;
+    private static final int    PIP_DEPTH  = 4;      // how deep a pip goes into its face
+    private static final double PIP_OFFSET = 30.0;   // from the face's centre to an outer pip
+
+    /** A program: main and its helpers only; never instantiated. */
     private PhantomGenerator()
     {
     }
 
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
+
     /**
-     * @param (String[]) args kind, type, N, output file
+     * Program entry point: writes a phantom volume as a gzip NRRD file.
+     * @param (String[]) args Kind, type, N, output file.
      */
     public static void main(String[] args)
     {
@@ -55,8 +72,8 @@ public final class PhantomGenerator
         try
         {
             VoxelType type = VoxelType.valueOf(args[1].toUpperCase(Locale.ROOT));
-            int n = Integer.parseInt(args[2]);
-            Volume v = build(args[0].toLowerCase(Locale.ROOT), type, n);
+            int       n    = Integer.parseInt(args[2]);
+            Volume    v    = build(args[0].toLowerCase(Locale.ROOT), type, n);
             NrrdWriter.write(v, new File(args[3]), true, ByteOrder.LITTLE_ENDIAN);
             System.out.println("Wrote " + args[3] + " (" + v + ")");
         }
@@ -67,11 +84,16 @@ public final class PhantomGenerator
         }
     }
 
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
+
     /**
-     * @param (String) kind phantom kind
-     * @param (VoxelType) type storage type
-     * @param (int) n edge length
-     * @return the phantom volume
+     * Builds a phantom of a known shape: spheres, a checkerboard or a gradient.
+     * @param (String) kind Phantom kind.
+     * @param (VoxelType) type Storage type.
+     * @param (int) n Edge length.
+     * @return (Volume) The phantom volume.
      */
     static Volume build(String kind, VoxelType type, int n)
     {
@@ -79,10 +101,10 @@ public final class PhantomGenerator
         {
             return buildDice();
         }
-        Volume v = Volume.create(type, n, n, n);
+        Volume v        = Volume.create(type, n, n, n);
         double maxValue = maxValue(type);
-        double c = (n - 1) / 2.0;
-        double maxR = n / 2.0;
+        double c        = (n - 1) / 2.0;
+        double maxR     = n / 2.0;
         for (int z = 0; z < n; z++)
         {
             for (int y = 0; y < n; y++)
@@ -96,8 +118,8 @@ public final class PhantomGenerator
                     }
                     else if (kind.equals("spheres"))
                     {
-                        double r = Math.sqrt((x - c) * (x - c) + (y - c) * (y - c) + (z - c) * (z - c));
-                        int ring = (int) (r / maxR * RINGS);
+                        double r    = Math.sqrt((x - c) * (x - c) + (y - c) * (y - c) + (z - c) * (z - c));
+                        int    ring = (int) (r / maxR * RINGS);
                         value = 0;
                         if (ring < RINGS)
                         {
@@ -121,14 +143,13 @@ public final class PhantomGenerator
     }
 
     /**
-     * The die described by the course's edge_cases.csv ("DATA/synthetic/dice.nrrd"), so that its
-     * 16 expected frames can be checked: opposite faces add up to 7, as on a real die.
-     *
-     * @return 200 x 180 x 160 uint32 volume
+     * Builds the die described by the course's edge_cases.csv ("DATA/synthetic/dice.nrrd"), so that
+     * its 16 expected frames can be checked: opposite faces add up to 7, as on a real die.
+     * @return (Volume) 200 x 180 x 160 uint32 volume.
      */
     static Volume buildDice()
     {
-        Volume v = Volume.create(VoxelType.UINT32, DICE_SX, DICE_SY, DICE_SZ);
+        Volume   v      = Volume.create(VoxelType.UINT32, DICE_SX, DICE_SY, DICE_SZ);
         double[] centre = new double[3];
         for (int a = 0; a < 3; a++)
         {
@@ -142,7 +163,7 @@ public final class PhantomGenerator
             {
                 for (int x = DICE_MIN[0]; x <= DICE_MAX[0]; x++)
                 {
-                    int[] p = {x, y, z};
+                    int[]  p     = {x, y, z};
                     double value = DICE_BODY;
                     for (int f = 0; f < faces.length; f++)
                     {
@@ -158,13 +179,18 @@ public final class PhantomGenerator
         return v;
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (int[]) p voxel
-     * @param (double[]) centre centre of the die
-     * @param (int) axis axis the face is normal to
-     * @param (int) end 0 for the face at the minimum, 1 for the maximum
-     * @param (int) pips number of pips on that face
-     * @return true when p lies in one of the face's pips
+     * Tests whether a voxel of a die's face lies on one of that face's pips.
+     * @param (int[]) p Voxel.
+     * @param (double[]) centre Centre of the die.
+     * @param (int) axis Axis the face is normal to.
+     * @param (int) end 0 for the face at the minimum, 1 for the maximum.
+     * @param (int) pips Number of pips on that face.
+     * @return (boolean) True when p lies in one of the face's pips.
      */
     private static boolean onPip(int[] p, double[] centre, int axis, int end, int pips)
     {
@@ -177,10 +203,10 @@ public final class PhantomGenerator
         {
             return false;
         }
-        int u = (axis + 1) % 3;
-        int w = (axis + 2) % 3;
-        double du = p[u] - centre[u];
-        double dw = p[w] - centre[w];
+        int        u     = (axis + 1) % 3;
+        int        w     = (axis + 2) % 3;
+        double     du    = p[u] - centre[u];
+        double     dw    = p[w] - centre[w];
         double[][] spots = pipSpots(pips);
         for (int i = 0; i < spots.length; i++)
         {
@@ -195,8 +221,9 @@ public final class PhantomGenerator
     }
 
     /**
-     * @param (int) pips 1 to 6
-     * @return pip centres in units of PIP_OFFSET from the face centre
+     * Gives the pip layout of a die face.
+     * @param (int) pips 1 to 6.
+     * @return (double[][]) Pip centres in units of PIP_OFFSET from the face centre.
      */
     private static double[][] pipSpots(int pips)
     {
@@ -224,8 +251,10 @@ public final class PhantomGenerator
     }
 
     /**
-     * @param (VoxelType) type storage type
-     * @return largest value used for that type
+     * Gives the brightest value a phantom uses for a storage type: the most an unsigned 8- or
+     * 16-bit sample holds, else one beyond the signed 32-bit range.
+     * @param (VoxelType) type Storage type.
+     * @return (double) Largest value used for that type.
      */
     private static double maxValue(VoxelType type)
     {

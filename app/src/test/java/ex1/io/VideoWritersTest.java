@@ -24,9 +24,15 @@ import org.junit.rules.TemporaryFolder;
 public class VideoWritersTest
 {
     @Rule
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Files of one test, deleted after it. */
     public TemporaryFolder tmp = new TemporaryFolder();
 
-    /** Back to the real ffmpeg for the other tests. */
+    /** Points the app back at the real ffmpeg for the other tests. */
     @After
     public void restore()
     {
@@ -34,18 +40,27 @@ public class VideoWritersTest
         VideoWriters.forgetProbe();
     }
 
+    /**
+     * Checks that without ffmpeg the export gets the built-in writer, and that it writes the file
+     * (TC-110).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void missingFfmpegGivesTheBuiltInWriter() throws IOException
     {
         useFfmpeg(new File(tmp.getRoot(), "no-such-ffmpeg").getPath());
-        File mp4 = new File(tmp.getRoot(), "a.mp4");
-        VideoWriter w = VideoWriters.openMp4(mp4, 32, 16, 10);
+        File        mp4 = new File(tmp.getRoot(), "a.mp4");
+        VideoWriter w   = VideoWriters.openMp4(mp4, 32, 16, 10);
         assertFalse(VideoWriters.usesFfmpeg(w));
         w.writeFrame(new byte[32 * 16]);
         w.close();
         assertTrue(mp4.length() > 0);
     }
 
+    /**
+     * Checks that an ffmpeg without the H.264 encoder (an LGPL build) is not used (TC-111).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void ffmpegWithoutTheH264EncoderIsNotUsed() throws IOException
     {
@@ -56,14 +71,19 @@ public class VideoWritersTest
         w.close();
     }
 
+    /**
+     * Checks that an ffmpeg that lists H.264 but fails while encoding is reported as an
+     * IOException, after which the built-in writer still writes the file (TC-112).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void ffmpegThatFailsWhileEncodingIsReportedAndTheBuiltInWriterStillWorks() throws IOException
     {
         Assume.assumeFalse("the fake ffmpeg is a shell script", isWindows());
         // Lists libx264, then dies when asked to encode (as a broken or blocked copy would).
         useFfmpeg(fakeFfmpeg("broken", "echo ' V....D libx264              H.264 / AVC'").getPath());
-        File mp4 = new File(tmp.getRoot(), "c.mp4");
-        VideoWriter w = VideoWriters.openMp4(mp4, 32, 16, 10);
+        File        mp4 = new File(tmp.getRoot(), "c.mp4");
+        VideoWriter w   = VideoWriters.openMp4(mp4, 32, 16, 10);
         assertTrue(VideoWriters.usesFfmpeg(w));
         try
         {
@@ -81,6 +101,9 @@ public class VideoWritersTest
         }
     }
 
+    /**
+     * Checks that a real ffmpeg with H.264, when installed, passes the probe and is used (TC-112).
+     */
     @Test
     public void realFfmpegWithH264IsUsed()
     {
@@ -90,7 +113,8 @@ public class VideoWritersTest
     }
 
     /**
-     * @param (String) program the ffmpeg to try from now on
+     * Points the app at another ffmpeg and forgets what it learned about the last one.
+     * @param (String) program The ffmpeg to try from now on.
      */
     private static void useFfmpeg(String program)
     {
@@ -99,14 +123,16 @@ public class VideoWritersTest
     }
 
     /**
-     * @param (String) name file name
-     * @param (String) encodersLine what "-encoders" prints
-     * @return an executable script: prints that line for "-hide_banner -encoders", else exits 1
-     * @throws (IOException) if it cannot be written
+     * Writes a fake ffmpeg: a script that lists the given encoders and fails when asked to encode.
+     * @param (String) name File name.
+     * @param (String) encodersLine What "-encoders" prints.
+     * @return (File) An executable script: prints that line for "-hide_banner -encoders", else
+     *                exits 1.
+     * @throws (IOException) If it cannot be written.
      */
     private File fakeFfmpeg(String name, String encodersLine) throws IOException
     {
-        File f = new File(tmp.getRoot(), name);
+        File   f      = new File(tmp.getRoot(), name);
         String script = "#!/bin/sh\nif [ \"$2\" = \"-encoders\" ]; then\n  " + encodersLine + "\n  exit 0\nfi\nexit 1\n";
         Files.write(f.toPath(), script.getBytes(StandardCharsets.US_ASCII));
         assertTrue(f.setExecutable(true));
@@ -114,7 +140,8 @@ public class VideoWritersTest
     }
 
     /**
-     * @return true on Windows
+     * Tells whether the tests run on Windows.
+     * @return (boolean) True on Windows.
      */
     private static boolean isWindows()
     {
@@ -122,8 +149,9 @@ public class VideoWritersTest
     }
 
     /**
-     * @param (String[]) cmd a command
-     * @return whether it runs and exits with 0
+     * Tells whether a command runs and succeeds.
+     * @param (String...) cmd A command.
+     * @return (boolean) Whether it runs and exits with 0.
      */
     private static boolean runs(String... cmd)
     {

@@ -22,17 +22,25 @@ import javax.swing.text.JTextComponent;
  */
 public final class FlatTextFieldUI extends BasicTextFieldUI
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Repaints the border when the focus comes and goes. */
     private FocusListener focusListener;
 
     /**
-     * @param (JComponent) c the field
-     * @return a new UI
+     * Creates the look of one text field (called by Swing).
+     * @param (JComponent) c The field.
+     * @return (ComponentUI) A new UI.
      */
     public static ComponentUI createUI(JComponent c)
     {
         return new FlatTextFieldUI();
     }
 
+    /** Listens to the focus, to repaint the border in its focus colour. */
     @Override
     protected void installListeners()
     {
@@ -40,12 +48,20 @@ public final class FlatTextFieldUI extends BasicTextFieldUI
         final JTextComponent c = getComponent();
         focusListener = new FocusListener()
         {
+            /**
+             * Repaints the border blue.
+             * @param (FocusEvent) e The focus change.
+             */
             @Override
             public void focusGained(FocusEvent e)
             {
                 c.repaint();
             }
 
+            /**
+             * Repaints the border grey.
+             * @param (FocusEvent) e The focus change.
+             */
             @Override
             public void focusLost(FocusEvent e)
             {
@@ -55,6 +71,7 @@ public final class FlatTextFieldUI extends BasicTextFieldUI
         c.addFocusListener(focusListener);
     }
 
+    /** Removes the focus listener when the field gets another look. */
     @Override
     protected void uninstallListeners()
     {
@@ -66,11 +83,15 @@ public final class FlatTextFieldUI extends BasicTextFieldUI
         }
     }
 
+    /**
+     * Paints the rounded well; outside its corners the panel behind shows.
+     * @param (Graphics) g Graphics of the field.
+     */
     @Override
     protected void paintBackground(Graphics g)
     {
-        JTextComponent c = getComponent();
-        Graphics2D g2 = (Graphics2D) g.create();
+        JTextComponent c  = getComponent();
+        Graphics2D     g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         // Outside the rounded corners the panel behind shows.
         Color outside = Theme.SURFACE;
@@ -88,8 +109,18 @@ public final class FlatTextFieldUI extends BasicTextFieldUI
     /** The rounded outline of a field; blue while it has the focus. */
     static final class FieldBorder implements Border, UIResource
     {
+        /** Space between the border and the text. */
         private static final Insets PADDING = new Insets(5, 8, 5, 8);
 
+        /**
+         * Draws the rounded outline: blue with the focus, faint when disabled.
+         * @param (Component) c The field.
+         * @param (Graphics) g Graphics of the field.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         * @param (int) width Width.
+         * @param (int) height Height.
+         */
         @Override
         public void paintBorder(Component c, Graphics g, int x, int y, int width, int height)
         {
@@ -109,12 +140,21 @@ public final class FlatTextFieldUI extends BasicTextFieldUI
             g2.dispose();
         }
 
+        /**
+         * Gives the padding around the text.
+         * @param (Component) c The field.
+         * @return (Insets) A new copy (Swing may change the one it gets).
+         */
         @Override
         public Insets getBorderInsets(Component c)
         {
             return new Insets(PADDING.top, PADDING.left, PADDING.bottom, PADDING.right);
         }
 
+        /**
+         * Tells Swing that the corners are see-through.
+         * @return (boolean) False.
+         */
         @Override
         public boolean isBorderOpaque()
         {

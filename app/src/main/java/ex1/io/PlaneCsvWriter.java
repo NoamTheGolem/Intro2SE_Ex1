@@ -22,14 +22,20 @@ import java.util.List;
  */
 public final class PlaneCsvWriter
 {
+    /** Static methods only; never instantiated. */
     private PlaneCsvWriter()
     {
     }
 
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
+
     /**
-     * @param (List) planes planes in order (null entries are skipped)
-     * @param (File) file destination
-     * @throws (IOException) on write errors
+     * Writes planes as a CSV file in the course format.
+     * @param (List<Plane>) planes Planes in order (null entries are skipped).
+     * @param (File) file Destination.
+     * @throws (IOException) On write errors.
      */
     public static void write(List<Plane> planes, File file) throws IOException
     {
@@ -52,9 +58,14 @@ public final class PlaneCsvWriter
         }
     }
 
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
+
     /**
-     * @param (Plane) p plane
-     * @return one CSV row in the course format
+     * Writes one plane as a CSV row.
+     * @param (Plane) p Plane.
+     * @return (String) One CSV row in the course format.
      */
     public static String row(Plane p)
     {
@@ -84,14 +95,13 @@ public final class PlaneCsvWriter
     }
 
     /**
-     * The plane exactly as a reader of the written CSV will see it, so that what the app renders
-     * is what Ex0 renders from the saved file: a video exported from these planes and a video
-     * rendered by Ex0 from the CSV are identical byte for byte (nearest-neighbour sampling would
-     * flip at voxel boundaries for differences far below EPS). With the exact number format this
-     * returns an equal plane; it stays as the one place that guarantees it.
-     *
-     * @param (Plane) p plane
-     * @return the same plane with every coordinate rounded to the written precision
+     * Gives the plane exactly as a reader of the written CSV will see it, so that what the app
+     * renders is what Ex0 renders from the saved file: a video exported from these planes and a
+     * video rendered by Ex0 from the CSV are identical byte for byte (nearest-neighbour sampling
+     * would flip at voxel boundaries for differences far below EPS). With the exact number format
+     * this returns an equal plane; it stays as the one place that guarantees it.
+     * @param (Plane) p Plane.
+     * @return (Plane) The same plane with every coordinate rounded to the written precision.
      */
     public static Plane quantize(Plane p)
     {
@@ -106,9 +116,14 @@ public final class PlaneCsvWriter
         return Plane.trapezoid(round(p.a1()), round(p.a2()), round(p.b()), round(p.c()));
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (Vec3) v point
-     * @return the point as the CSV text of it reads back
+     * Rounds a point the way its CSV text will read back.
+     * @param (Vec3) v Point.
+     * @return (Vec3) The point as the CSV text of it reads back.
      */
     private static Vec3 round(Vec3 v)
     {
@@ -116,10 +131,11 @@ public final class PlaneCsvWriter
     }
 
     /**
-     * @param (StringBuilder) sb destination
-     * @param (double) x x
-     * @param (double) y y
-     * @param (double) z z
+     * Appends the three coordinates of a point to a row.
+     * @param (StringBuilder) sb Destination.
+     * @param (double) x X.
+     * @param (double) y Y.
+     * @param (double) z Z.
      */
     private static void append(StringBuilder sb, double x, double y, double z)
     {
@@ -127,8 +143,9 @@ public final class PlaneCsvWriter
     }
 
     /**
-     * @param (double) v value
-     * @return compact decimal text (integers without ".0")
+     * Writes a coordinate exactly: the shortest decimal that reads back as the same double.
+     * @param (double) v Value.
+     * @return (String) Compact decimal text (integers without ".0").
      */
     private static String number(double v)
     {

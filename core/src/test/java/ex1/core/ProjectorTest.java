@@ -10,11 +10,18 @@ import org.junit.Test;
  */
 public class ProjectorTest
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Tolerance of float comparisons. */
     private static final float DELTA = 1e-3f;
 
     /**
-     * @param (int) n edge length
-     * @return volume with a unique value per voxel: v = x + 100y + 10000z
+     * Makes a volume whose every voxel says where it is.
+     * @param (int) n Edge length.
+     * @return (Volume) Volume with a unique value per voxel: v = x + 100y + 10000z.
      */
     private static Volume codedVolume(int n)
     {
@@ -32,12 +39,13 @@ public class ProjectorTest
         return v;
     }
 
+    /** Checks that a plane on a slice gives that slice exactly, voxel for pixel (TC-50). */
     @Test
     public void axisAlignedRectangleReproducesSliceExactly()
     {
-        int n = 20;
+        int    n = 20;
         Volume v = codedVolume(n);
-        int z = 7;
+        int    z = 7;
         Plane p = Plane.trapezoid(new Vec3(0, 0, z), new Vec3(n - 1, 0, z),
                 new Vec3(0, n - 1, z), new Vec3(n - 1, n - 1, z));
         Image2D img = Projector.create(Projector.Interpolation.NEAREST).project(v, p);
@@ -52,10 +60,11 @@ public class ProjectorTest
         }
     }
 
+    /** Checks that both sampling modes agree on voxel centres (TC-51). */
     @Test
     public void trilinearEqualsNearestOnGridPoints()
     {
-        int n = 12;
+        int    n = 12;
         Volume v = codedVolume(n);
         Plane p = Plane.trapezoid(new Vec3(0, 3, 0), new Vec3(n - 1, 3, 0),
                 new Vec3(0, 3, n - 1), new Vec3(n - 1, 3, n - 1));
@@ -67,11 +76,12 @@ public class ProjectorTest
         }
     }
 
+    /** Checks that trilinear sampling reproduces a linear volume exactly, at any point (TC-52). */
     @Test
     public void trilinearIsExactForLinearData()
     {
         // A linear function is reproduced exactly by trilinear interpolation at any point.
-        int n = 16;
+        int    n = 16;
         Volume v = Volume.create(VoxelType.FLOAT32, n, n, n);
         for (int z = 0; z < n; z++)
         {
@@ -84,26 +94,26 @@ public class ProjectorTest
             }
         }
         // Oblique isosceles triangle with fractional coordinates, fully inside the volume.
-        Vec3 a = new Vec3(1.3, 2.7, 0.4);
-        Vec3 axis = new Vec3(10.8, 3.5, 9.5).normalized();
-        Vec3 perp = axis.cross(new Vec3(0, 0, 1)).normalized();
-        Vec3 mid = a.add(axis.scale(10));
-        Vec3 b = mid.sub(perp.scale(3));
-        Vec3 c = mid.add(perp.scale(3));
-        Plane p = Plane.triangle(a, b, c);
-        Image2D img = Projector.create(Projector.Interpolation.TRILINEAR).project(v, p);
+        Vec3    a    = new Vec3(1.3, 2.7, 0.4);
+        Vec3    axis = new Vec3(10.8, 3.5, 9.5).normalized();
+        Vec3    perp = axis.cross(new Vec3(0, 0, 1)).normalized();
+        Vec3    mid  = a.add(axis.scale(10));
+        Vec3    b    = mid.sub(perp.scale(3));
+        Vec3    c    = mid.add(perp.scale(3));
+        Plane   p    = Plane.triangle(a, b, c);
+        Image2D img  = Projector.create(Projector.Interpolation.TRILINEAR).project(v, p);
 
         // Apex row: the apex itself, centred.
         assertEquals(f(a), img.get(img.width() / 2, 0), 1e-3);
 
         // Last row: recompute every sample point with the formula of ALGORITHM.md §3.
-        int y = img.height() - 1;
-        Vec3 left = a.add(b.sub(a).normalized().scale(y));
-        Vec3 right = a.add(c.sub(a).normalized().scale(y));
-        double d = right.dist(left);
-        int count = (int) Math.floor(d) + 1;
-        int x0 = (img.width() - count) / 2;
-        Vec3 dp = right.sub(left).normalized();
+        int    y     = img.height() - 1;
+        Vec3   left  = a.add(b.sub(a).normalized().scale(y));
+        Vec3   right = a.add(c.sub(a).normalized().scale(y));
+        double d     = right.dist(left);
+        int    count = (int) Math.floor(d) + 1;
+        int    x0    = (img.width() - count) / 2;
+        Vec3   dp    = right.sub(left).normalized();
         for (int i = 0; i < count; i++)
         {
             Vec3 q = left.add(dp.scale(i));
@@ -112,14 +122,16 @@ public class ProjectorTest
     }
 
     /**
-     * @param (Vec3) q point
-     * @return the linear test function 2x + 3y + 5z
+     * Evaluates the linear function the trilinear test volume is made of.
+     * @param (Vec3) q Point.
+     * @return (double) The linear test function 2x + 3y + 5z.
      */
     private static double f(Vec3 q)
     {
         return 2 * q.x + 3 * q.y + 5 * q.z;
     }
 
+    /** Checks that points outside the volume read as 0 ("if p is NOT in M, v = 0") (TC-54). */
     @Test
     public void pointsOutsideVolumeAreZero()
     {
@@ -138,11 +150,12 @@ public class ProjectorTest
         assertEquals(0f, img.get(15, 4), DELTA);
     }
 
+    /** Checks that a plane entirely outside the volume gives a black image (TC-54). */
     @Test
     public void planeCompletelyOutsideGivesBlackImage()
     {
-        Volume v = codedVolume(5);
-        Plane p = Plane.triangle(new Vec3(100, 100, 100), new Vec3(90, 110, 100), new Vec3(110, 110, 100));
+        Volume  v   = codedVolume(5);
+        Plane   p   = Plane.triangle(new Vec3(100, 100, 100), new Vec3(90, 110, 100), new Vec3(110, 110, 100));
         Image2D img = Projector.create(Projector.Interpolation.TRILINEAR).project(v, p);
         for (int i = 0; i < img.pixels().length; i++)
         {
@@ -150,6 +163,10 @@ public class ProjectorTest
         }
     }
 
+    /**
+     * Checks the triangle's shape in the image: the apex alone in row 0, every row centred,
+     * widening evenly to the base (TC-53).
+     */
     @Test
     public void triangleShapeIsCentredAndWidensLinearly()
     {
@@ -159,16 +176,16 @@ public class ProjectorTest
             v.setValue(i, 1);
         }
         // Apex (10,0,5); base from (0,20,5) to (20,20,5): |ab| = |ac| = sqrt(500).
-        Plane p = Plane.triangle(new Vec3(10, 0, 5), new Vec3(0, 20, 5), new Vec3(20, 20, 5));
+        Plane   p   = Plane.triangle(new Vec3(10, 0, 5), new Vec3(0, 20, 5), new Vec3(20, 20, 5));
         Image2D img = Projector.create(Projector.Interpolation.NEAREST).project(v, p);
-        int w = img.width();
+        int     w   = img.width();
         assertEquals(21, w);
         // Row 0: only the apex, in the centre column.
         assertEquals(1f, img.get(w / 2, 0), DELTA);
         assertEquals(0f, img.get(w / 2 - 1, 0), DELTA);
         assertEquals(0f, img.get(w / 2 + 1, 0), DELTA);
         // Last row: covered almost fully.
-        int last = img.height() - 1;
+        int last   = img.height() - 1;
         int filled = 0;
         for (int x = 0; x < w; x++)
         {
@@ -195,25 +212,30 @@ public class ProjectorTest
         }
     }
 
+    /** Checks that an image used again shows nothing of the frame before (TC-55). */
     @Test
     public void reusedImageIsClearedBetweenFrames()
     {
-        Volume v = codedVolume(10);
+        Volume    v    = codedVolume(10);
         Projector proj = Projector.create(Projector.Interpolation.NEAREST);
-        Image2D img = new Image2D(30, 30);
+        Image2D   img  = new Image2D(30, 30);
         proj.project(v, Plane.trapezoid(new Vec3(0, 0, 1), new Vec3(9, 0, 1), new Vec3(0, 9, 1), new Vec3(9, 9, 1)), img);
         proj.project(v, Plane.triangle(new Vec3(50, 50, 50), new Vec3(45, 55, 50), new Vec3(55, 55, 50)), img);
         assertEquals(0f, img.get(5, 5), 0f);
     }
 
+    /** Checks that an image smaller than the plane needs is refused (TC-55). */
     @Test(expected = IllegalArgumentException.class)
     public void tooSmallTargetImageIsRejected()
     {
         Volume v = codedVolume(10);
-        Plane p = Plane.trapezoid(new Vec3(0, 0, 1), new Vec3(9, 0, 1), new Vec3(0, 9, 1), new Vec3(9, 9, 1));
+        Plane  p = Plane.trapezoid(new Vec3(0, 0, 1), new Vec3(9, 0, 1), new Vec3(0, 9, 1), new Vec3(9, 9, 1));
         Projector.create(Projector.Interpolation.NEAREST).project(v, p, new Image2D(5, 5));
     }
 
+    /**
+     * Checks that unsigned types read back as unsigned values, also above the signed range (TC-55).
+     */
     @Test
     public void unsignedTypesAreReadAsUnsigned()
     {
@@ -231,6 +253,7 @@ public class ProjectorTest
         assertEquals(-3f, sb.valueAt(0), 0f);
     }
 
+    /** Checks the assignment's size limit: 1024 voxels along an axis is refused (TC-55). */
     @Test(expected = IllegalArgumentException.class)
     public void volumeSizeLimitIsEnforced()
     {

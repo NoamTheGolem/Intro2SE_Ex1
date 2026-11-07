@@ -12,8 +12,9 @@ import org.junit.Test;
 public class ParallelProjectorTest
 {
     /**
-     * @param (int) n edge length
-     * @return busy volume
+     * Makes a volume with a different value almost everywhere, so any wrong row shows.
+     * @param (int) n Edge length.
+     * @return (Volume) Busy volume.
      */
     private static Volume volume(int n)
     {
@@ -25,6 +26,10 @@ public class ParallelProjectorTest
         return v;
     }
 
+    /**
+     * Checks that the threads give exactly the image one thread gives, in both sampling modes
+     * (TC-56).
+     */
     @Test
     public void identicalToSingleThreadForBothModes()
     {
@@ -34,7 +39,7 @@ public class ParallelProjectorTest
         Projector.Interpolation[] modes = Projector.Interpolation.values();
         for (int m = 0; m < modes.length; m++)
         {
-            Projector single = Projector.create(modes[m]);
+            Projector single   = Projector.create(modes[m]);
             Projector parallel = Projector.create(modes[m], 3);
             assertTrue(parallel instanceof ParallelProjector);
             Plane[] planes = {oblique, rect};
@@ -48,17 +53,19 @@ public class ParallelProjectorTest
         }
     }
 
+    /** Checks that a plane of a few rows is projected on the calling thread, correctly (TC-57). */
     @Test
     public void smallPlanesStayOnTheCallingThread()
     {
-        Volume v = volume(10);
+        Volume    v        = volume(10);
         Projector parallel = Projector.create(Projector.Interpolation.NEAREST, 4);
-        Plane tiny = Plane.triangle(new Vec3(5, 0, 5), new Vec3(3, 3, 5), new Vec3(7, 3, 5));
-        Image2D img = parallel.project(v, tiny);
+        Plane     tiny     = Plane.triangle(new Vec3(5, 0, 5), new Vec3(3, 3, 5), new Vec3(7, 3, 5));
+        Image2D   img      = parallel.project(v, tiny);
         assertEquals(v.get(5, 0, 5), img.get(img.width() / 2, 0), 0f);
         ((ParallelProjector) parallel).shutdown();
     }
 
+    /** Checks that one thread gives the plain projector, without the parallel wrapper (TC-58). */
     @Test
     public void oneThreadMeansNoWrapper()
     {
@@ -66,6 +73,7 @@ public class ParallelProjectorTest
         assertTrue(Projector.create(Projector.Interpolation.TRILINEAR, 0) instanceof TrilinearProjector);
     }
 
+    /** Checks that the parallel projector refuses fewer than two threads (TC-58). */
     @Test(expected = IllegalArgumentException.class)
     public void needsTwoThreads()
     {

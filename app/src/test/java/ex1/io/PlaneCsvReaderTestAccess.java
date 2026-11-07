@@ -5,12 +5,14 @@ package ex1.io;
  */
 public final class PlaneCsvReaderTestAccess
 {
+    /** Static methods only; never instantiated. */
     private PlaneCsvReaderTestAccess()
     {
     }
 
     /**
-     * @return content of the course's Ex0.csv
+     * Gives the course's own Ex0.csv, as it ships in data/.
+     * @return (String) Content of the course's Ex0.csv.
      */
     public static String courseCsv()
     {

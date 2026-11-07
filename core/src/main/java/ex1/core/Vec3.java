@@ -6,16 +6,21 @@ package ex1.core;
  */
 public final class Vec3
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The coordinates. */
     public final double x;
     public final double y;
     public final double z;
 
     /**
      * Creates a vector.
-     *
-     * @param (double) x x component
-     * @param (double) y y component
-     * @param (double) z z component
+     * @param (double) x X component.
+     * @param (double) y Y component.
+     * @param (double) z Z component.
      */
     public Vec3(double x, double y, double z)
     {
@@ -25,8 +30,9 @@ public final class Vec3
     }
 
     /**
-     * @param (Vec3) o other vector
-     * @return this + o
+     * Adds a vector.
+     * @param (Vec3) o Other vector.
+     * @return (Vec3) This + o.
      */
     public Vec3 add(Vec3 o)
     {
@@ -34,8 +40,9 @@ public final class Vec3
     }
 
     /**
-     * @param (Vec3) o other vector
-     * @return this - o
+     * Subtracts a vector.
+     * @param (Vec3) o Other vector.
+     * @return (Vec3) This - o.
      */
     public Vec3 sub(Vec3 o)
     {
@@ -43,8 +50,9 @@ public final class Vec3
     }
 
     /**
-     * @param (double) k scale factor
-     * @return this * k
+     * Multiplies by a number.
+     * @param (double) k Scale factor.
+     * @return (Vec3) This * k.
      */
     public Vec3 scale(double k)
     {
@@ -52,8 +60,9 @@ public final class Vec3
     }
 
     /**
-     * @param (Vec3) o other vector
-     * @return dot product
+     * Computes the dot product.
+     * @param (Vec3) o Other vector.
+     * @return (double) Dot product.
      */
     public double dot(Vec3 o)
     {
@@ -61,8 +70,9 @@ public final class Vec3
     }
 
     /**
-     * @param (Vec3) o other vector
-     * @return cross product this × o
+     * Computes the cross product.
+     * @param (Vec3) o Other vector.
+     * @return (Vec3) Cross product this × o.
      */
     public Vec3 cross(Vec3 o)
     {
@@ -70,7 +80,8 @@ public final class Vec3
     }
 
     /**
-     * @return Euclidean length
+     * Computes the length.
+     * @return (double) Euclidean length.
      */
     public double length()
     {
@@ -78,8 +89,9 @@ public final class Vec3
     }
 
     /**
-     * @param (Vec3) o other point
-     * @return distance between this and o
+     * Computes the distance to another point.
+     * @param (Vec3) o Other point.
+     * @return (double) Distance between this and o.
      */
     public double dist(Vec3 o)
     {
@@ -87,10 +99,9 @@ public final class Vec3
     }
 
     /**
-     * Unit vector in the same direction; the zero vector stays zero
+     * Gives the unit vector in the same direction; the zero vector stays zero
      * (degenerate rows of a triangle must not produce NaN).
-     *
-     * @return normalized copy
+     * @return (Vec3) Normalized copy.
      */
     public Vec3 normalized()
     {
@@ -102,6 +113,10 @@ public final class Vec3
         return scale(1.0 / len);
     }
 
+    /**
+     * Describes the vector for messages.
+     * @return (String) "(x, y, z)".
+     */
     @Override
     public String toString()
     {

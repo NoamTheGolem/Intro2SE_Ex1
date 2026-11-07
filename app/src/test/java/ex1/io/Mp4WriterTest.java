@@ -22,25 +22,42 @@ import org.junit.rules.TemporaryFolder;
  */
 public class Mp4WriterTest
 {
-    private static final int W = 34;
-    private static final int H = 18;
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /**
+     * The test video: 34 x 18 frames (not whole macroblocks, so the crop is tested too), and how
+     * many.
+     */
+    private static final int W      = 34;
+    private static final int H      = 18;
     private static final int FRAMES = 4;
 
+    /** Files of one test, deleted after it. */
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /**
+     * Checks the emulation prevention bytes the H.264 standard asks for (section 7.4.1) (TC-70).
+     */
     @Test
     public void escapeInsertsPreventionBytes()
     {
-        byte[] in = {0, 0, 0, 0, 0, 1, 5, 0, 0, 3};
+        byte[] in       = {0, 0, 0, 0, 0, 1, 5, 0, 0, 3};
         byte[] expected = {0, 0, 3, 0, 0, 3, 0, 1, 5, 0, 0, 3, 3};
         assertArrayEquals(expected, Mp4Writer.escape(in));
     }
 
+    /**
+     * Checks the boxes of the file: ftyp, mdat before moov, and the avcC description (TC-71).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void fileHasFtypMdatMoov() throws IOException
     {
-        File f = write();
+        File   f    = write();
         byte[] data = Files.readAllBytes(f.toPath());
         String text = new String(data, StandardCharsets.ISO_8859_1);
         assertEquals("ftyp", text.substring(4, 8));
@@ -50,6 +67,10 @@ public class Mp4WriterTest
         assertTrue(text.indexOf("mdat") < text.indexOf("moov"));
     }
 
+    /**
+     * Checks that ffmpeg decodes every frame back to within 1 grey level of every pixel (TC-72).
+     * @throws (Exception) When a test file cannot be written or a program cannot be run.
+     */
     @Test
     public void ffmpegDecodesEveryPixel() throws Exception
     {
@@ -57,10 +78,10 @@ public class Mp4WriterTest
         File f = write();
         Process p = new ProcessBuilder("ffmpeg", "-v", "error", "-i", f.getPath(), "-f", "rawvideo",
                 "-pix_fmt", "gray", "-vf", "scale=in_range=tv:out_range=pc", "-").start();
-        InputStream in = p.getInputStream();
+        InputStream           in      = p.getInputStream();
         ByteArrayOutputStream decoded = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        int r = in.read(buf);
+        byte[]                buf     = new byte[8192];
+        int                   r       = in.read(buf);
         while (r >= 0)
         {
             decoded.write(buf, 0, r);
@@ -81,12 +102,14 @@ public class Mp4WriterTest
     }
 
     /**
-     * @return a small video of known frames (one all-black, to exercise emulation prevention)
-     * @throws (IOException) on write errors
+     * Writes the test video.
+     * @return (File) A small video of known frames (one all-black, to exercise emulation
+     *                prevention).
+     * @throws (IOException) On write errors.
      */
     private File write() throws IOException
     {
-        File f = new File(tmp.getRoot(), "t.mp4");
+        File      f = new File(tmp.getRoot(), "t.mp4");
         Mp4Writer w = new Mp4Writer(f, W, H, 10);
         for (int k = 0; k < FRAMES; k++)
         {
@@ -97,8 +120,9 @@ public class Mp4WriterTest
     }
 
     /**
-     * @param (int) k frame number
-     * @return test frame k
+     * Makes test frame k: a pattern that differs from frame to frame.
+     * @param (int) k Frame number.
+     * @return (byte[]) Test frame k.
      */
     private static byte[] pattern(int k)
     {
@@ -115,7 +139,8 @@ public class Mp4WriterTest
     }
 
     /**
-     * @return true when ffmpeg runs
+     * Tells whether ffmpeg is installed.
+     * @return (boolean) True when ffmpeg runs.
      */
     private static boolean ffmpegAvailable()
     {

@@ -19,6 +19,8 @@ import java.nio.ByteOrder;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -30,37 +32,47 @@ import java.util.zip.GZIPInputStream;
  */
 public final class NrrdReader
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Start of every NRRD file (then a version digit). */
     private static final String MAGIC = "NRRD000";
-    private static final int CHUNK = 1 << 20;
+
+    /** Bytes read at a time, and the longest header before the file is called broken. */
+    private static final int CHUNK            = 1 << 20;
     private static final int MAX_HEADER_BYTES = 1 << 16;
 
+    /** Static methods only; never instantiated. */
     private NrrdReader()
     {
     }
 
-    // ===================================================================== ENTRY
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
 
     /**
      * Reads a volume from a .nrrd (attached) or .nhdr (detached) file.
-     *
-     * @param (File) file the NRRD file
-     * @return the volume
-     * @throws (IOException) on I/O errors or unsupported / malformed files
+     * @param (File) file The NRRD file.
+     * @return (Volume) The volume.
+     * @throws (IOException) On I/O errors or unsupported / malformed files.
      */
     public static Volume read(File file) throws IOException
     {
         InputStream in = new BufferedInputStream(new FileInputStream(file));
         try
         {
-            Map<String, String> fields = readHeader(in, file.getName());
-            VoxelType type = parseType(require(fields, "type"));
-            int[] sizes = parseSizes(fields);
-            ByteOrder order = parseEndian(fields, type);
-            boolean gzip = parseEncoding(fields);
-            long byteSkip = parseByteSkip(fields);
+            Map<String, String> fields   = readHeader(in, file.getName());
+            VoxelType           type     = parseType(require(fields, "type"));
+            int[]               sizes    = parseSizes(fields);
+            ByteOrder           order    = parseEndian(fields, type);
+            boolean             gzip     = parseEncoding(fields);
+            long                byteSkip = parseByteSkip(fields);
 
-            InputStream data = in;
-            String dataFile = fields.get("data file");
+            InputStream data     = in;
+            String      dataFile = fields.get("data file");
             if (dataFile == null)
             {
                 dataFile = fields.get("datafile");
@@ -89,15 +101,16 @@ public final class NrrdReader
         }
     }
 
-    // ============================================================ BUILD PIPELINE
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
 
     /**
      * Reads header lines up to the empty line that separates header and data.
-     *
-     * @param (InputStream) in stream positioned at the file start
-     * @param (String) name file name for messages
-     * @return field name (lower case) to value
-     * @throws (IOException) if the file is not NRRD
+     * @param (InputStream) in Stream positioned at the file start.
+     * @param (String) name File name for messages.
+     * @return (Map<String, String>) Field name (lower case) to value.
+     * @throws (IOException) If the file is not NRRD.
      */
     private static Map<String, String> readHeader(InputStream in, String name) throws IOException
     {
@@ -106,8 +119,8 @@ public final class NrrdReader
         {
             throw new IOException(name + ": not a NRRD file (missing NRRD000x magic)");
         }
-        Map<String, String> fields = new HashMap<String, String>();
-        int headerBytes = magic.length();
+        Map<String, String> fields      = new HashMap<String, String>();
+        int                 headerBytes = magic.length();
         while (true)
         {
             String line = readLine(in);
@@ -138,9 +151,10 @@ public final class NrrdReader
     }
 
     /**
-     * @param (String) t NRRD type string
-     * @return matching voxel type
-     * @throws (IOException) for unsupported types (e.g. double, 64-bit)
+     * Reads the "type" field.
+     * @param (String) t NRRD type string.
+     * @return (VoxelType) Matching voxel type.
+     * @throws (IOException) For unsupported types (e.g. double, 64-bit).
      */
     private static VoxelType parseType(String t) throws IOException
     {
@@ -179,9 +193,10 @@ public final class NrrdReader
     }
 
     /**
-     * @param (Map) fields header fields
-     * @return sizes {sx, sy, sz}
-     * @throws (IOException) unless dimension is 3 with 3 positive sizes
+     * Reads the "dimension" and "sizes" fields.
+     * @param (Map<String, String>) fields Header fields.
+     * @return (int[]) Sizes {sx, sy, sz}.
+     * @throws (IOException) Unless dimension is 3 with 3 positive sizes.
      */
     private static int[] parseSizes(Map<String, String> fields) throws IOException
     {
@@ -216,10 +231,11 @@ public final class NrrdReader
     }
 
     /**
-     * @param (Map) fields header fields
-     * @param (VoxelType) type voxel type (1-byte types need no endian field)
-     * @return byte order of the samples
-     * @throws (IOException) on an unknown or missing endian field
+     * Reads the "endian" field (not needed for one-byte samples).
+     * @param (Map<String, String>) fields Header fields.
+     * @param (VoxelType) type Voxel type (1-byte types need no endian field).
+     * @return (ByteOrder) Byte order of the samples.
+     * @throws (IOException) On an unknown or missing endian field.
      */
     private static ByteOrder parseEndian(Map<String, String> fields, VoxelType type) throws IOException
     {
@@ -245,9 +261,10 @@ public final class NrrdReader
     }
 
     /**
-     * @param (Map) fields header fields
-     * @return true for gzip, false for raw
-     * @throws (IOException) for other encodings (ascii, hex, bzip2)
+     * Reads the "encoding" field.
+     * @param (Map<String, String>) fields Header fields.
+     * @return (boolean) True for gzip, false for raw.
+     * @throws (IOException) For other encodings (ascii, hex, bzip2).
      */
     private static boolean parseEncoding(Map<String, String> fields) throws IOException
     {
@@ -264,9 +281,10 @@ public final class NrrdReader
     }
 
     /**
-     * @param (Map) fields header fields
-     * @return bytes to skip before the samples
-     * @throws (IOException) for "byte skip: -1" or bad numbers
+     * Reads the "byte skip" field (0 when missing).
+     * @param (Map<String, String>) fields Header fields.
+     * @return (long) Bytes to skip before the samples.
+     * @throws (IOException) For "byte skip: -1" or bad numbers.
      */
     private static long parseByteSkip(Map<String, String> fields) throws IOException
     {
@@ -296,10 +314,11 @@ public final class NrrdReader
     }
 
     /**
-     * @param (File) header the header file
-     * @param (String) dataFile value of the "data file" field
-     * @return the data file, resolved relative to the header's folder
-     * @throws (IOException) for multi-file data (LIST or format patterns)
+     * Finds the data file of a detached header.
+     * @param (File) header The header file.
+     * @param (String) dataFile Value of the "data file" field.
+     * @return (File) The data file, resolved relative to the header's folder.
+     * @throws (IOException) For multi-file data (LIST or format patterns).
      */
     private static File resolveDataFile(File header, String dataFile) throws IOException
     {
@@ -318,19 +337,18 @@ public final class NrrdReader
     /**
      * Fills the volume's typed array chunk by chunk, so peak memory is the volume plus 1 MB
      * instead of twice the volume.
-     *
-     * @param (InputStream) in sample bytes
-     * @param (Volume) volume destination
-     * @param (ByteOrder) order sample byte order
-     * @throws (IOException) if the data ends early
+     * @param (InputStream) in Sample bytes.
+     * @param (Volume) volume Destination.
+     * @param (ByteOrder) order Sample byte order.
+     * @throws (IOException) If the data ends early.
      */
     private static void readSamples(InputStream in, Volume volume, ByteOrder order) throws IOException
     {
-        int bytesPerVoxel = volume.type().bytes();
-        int total = volume.voxelCount();
-        int voxelsPerChunk = CHUNK / bytesPerVoxel;
-        byte[] chunk = new byte[voxelsPerChunk * bytesPerVoxel];
-        ByteBuffer buffer = ByteBuffer.wrap(chunk).order(order);
+        int        bytesPerVoxel  = volume.type().bytes();
+        int        total          = volume.voxelCount();
+        int        voxelsPerChunk = CHUNK / bytesPerVoxel;
+        byte[]     chunk          = new byte[voxelsPerChunk * bytesPerVoxel];
+        ByteBuffer buffer         = ByteBuffer.wrap(chunk).order(order);
 
         int done = 0;
         while (done < total)
@@ -343,13 +361,16 @@ public final class NrrdReader
         }
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (ByteBuffer) buffer chunk bytes in the file's byte order
-     * @param (Volume) volume destination
-     * @param (int) start first voxel index to fill
-     * @param (int) n number of voxels
+     * Copies one chunk of samples into the volume's typed array.
+     * @param (ByteBuffer) buffer Chunk bytes in the file's byte order.
+     * @param (Volume) volume Destination.
+     * @param (int) start First voxel index to fill.
+     * @param (int) n Number of voxels.
      */
     private static void copyChunk(ByteBuffer buffer, Volume volume, int start, int n)
     {
@@ -372,10 +393,11 @@ public final class NrrdReader
     }
 
     /**
-     * @param (Map) fields header fields
-     * @param (String) key required field name
-     * @return its value
-     * @throws (IOException) if missing
+     * Reads a field that must be there.
+     * @param (Map<String, String>) fields Header fields.
+     * @param (String) key Required field name.
+     * @return (String) Its value.
+     * @throws (IOException) If missing.
      */
     private static String require(Map<String, String> fields, String key) throws IOException
     {
@@ -391,9 +413,8 @@ public final class NrrdReader
      * Reads "space directions: (0,1,0) (0,0,-1) (-1.3,0,0)" or the older "spacings: 1 1 1.3".
      * Geometry is optional (only the viewer uses it), so anything unreadable gives null instead
      * of an error.
-     *
-     * @param (Map) fields header fields
-     * @return one physical step vector per index axis, or null
+     * @param (Map<String, String>) fields Header fields.
+     * @return (double[][]) One physical step vector per index axis, or null.
      */
     static double[][] parseDirections(Map<String, String> fields)
     {
@@ -402,9 +423,9 @@ public final class NrrdReader
         {
             if (dirs != null)
             {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\(([^)]*)\\)").matcher(dirs);
+                Matcher    m   = Pattern.compile("\\(([^)]*)\\)").matcher(dirs);
                 double[][] out = new double[3][];
-                int n = 0;
+                int        n   = 0;
                 while (m.find() && n < 3)
                 {
                     String[] parts = m.group(1).split(",");
@@ -452,15 +473,14 @@ public final class NrrdReader
 
     /**
      * Reads one header line byte by byte (a Reader would buffer past the header into the data).
-     *
-     * @param (InputStream) in stream
-     * @return line without the line terminator, or null at end of stream
-     * @throws (IOException) on I/O errors
+     * @param (InputStream) in Stream.
+     * @return (String) Line without the line terminator, or null at end of stream.
+     * @throws (IOException) On I/O errors.
      */
     private static String readLine(InputStream in) throws IOException
     {
         ByteArrayOutputStream line = new ByteArrayOutputStream();
-        int b = in.read();
+        int                   b    = in.read();
         if (b < 0)
         {
             return null;
@@ -477,10 +497,11 @@ public final class NrrdReader
     }
 
     /**
-     * @param (InputStream) in stream
-     * @param (byte[]) buf destination
-     * @param (int) len bytes to read
-     * @throws (IOException) if the stream ends first
+     * Reads exactly len bytes (a gzip stream may give fewer at a time).
+     * @param (InputStream) in Stream.
+     * @param (byte[]) buf Destination.
+     * @param (int) len Bytes to read.
+     * @throws (IOException) If the stream ends first.
      */
     private static void readFully(InputStream in, byte[] buf, int len) throws IOException
     {
@@ -497,9 +518,10 @@ public final class NrrdReader
     }
 
     /**
-     * @param (InputStream) in stream
-     * @param (long) n bytes to skip
-     * @throws (IOException) if the stream ends first
+     * Skips exactly n bytes.
+     * @param (InputStream) in Stream.
+     * @param (long) n Bytes to skip.
+     * @throws (IOException) If the stream ends first.
      */
     private static void skipFully(InputStream in, long n) throws IOException
     {

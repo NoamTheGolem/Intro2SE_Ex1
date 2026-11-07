@@ -5,16 +5,17 @@ import java.util.List;
 /**
  * Turns the raw points of one CSV row into the plane that will be projected (ADR-0004).
  *
- * A CSV row only has columns x1..x4, so the order of the points is a convention. The course's
- * data files use one convention throughout, written down in its edge-case file
- * ("3 for a triangle a, b, c, or 4 for a trapezoid a', b, a'', c"): a trapezoid is listed as its
- * two rails, a1 -> b then a2 -> c. That is the order every file of the lecturer's data set
- * (Ex0.csv, head.csv, biscuit_cake.csv, edge_cases.csv, ...) is valid in, and the order in which
- * head.csv's slices come out the right way up. The resolver therefore:
+ * A CSV row only has columns x1..x4, so the order of the points is a convention. The course's data
+ * files use one convention throughout, written down in its edge-case file ("3 for a triangle a, b,
+ * c, or 4 for a trapezoid a', b, a'', c"): a trapezoid is listed as its two rails, a1 -> b then a2
+ * -> c. That is the order every file of the lecturer's data set (Ex0.csv, head.csv,
+ * biscuit_cake.csv, edge_cases.csv, ...) is valid in, and the order in which head.csv's slices come
+ * out the right way up. The resolver therefore:
  * <ol>
  *   <li>reads 3 points as (a, b, c) and 4 points as (a1, b, a2, c), the course order;</li>
- *   <li>if a 4-point row breaks the rules in the course order but is a valid trapezoid when read
- *       in the order the Q&amp;A names the points, (a1, a2, b, c), uses that reading and says so;</li>
+ *   <li>if a 4-point row breaks the rules in the course order but is a valid trapezoid when
+ *       read in the order the Q&amp;A names the points, (a1, a2, b, c), uses that reading and
+ *       says so;</li>
  *   <li>otherwise keeps the course order: the caller draws a doubtful plane as given (with
  *       warnings) and turns a bad one into a black frame.</li>
  * </ol>
@@ -23,6 +24,11 @@ import java.util.List;
  */
 public final class PlaneResolver
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
     /** The order the course's files list four points in. */
     public static final String COURSE_ORDER = "a1, b, a2, c";
 
@@ -34,15 +40,18 @@ public final class PlaneResolver
     {
         /** The plane to project, in the chosen reading. */
         public final Plane plane;
+
         /** A note when the points were not read in the course order; null otherwise. */
         public final String reordering;
+
         /** Rule violations of the chosen reading; empty when it is valid. */
         public final List<String> problems;
 
         /**
-         * @param (Plane) plane chosen plane
-         * @param (String) reordering description of a non-default reading, or null
-         * @param (List) problems remaining rule violations
+         * Creates a result.
+         * @param (Plane) plane Chosen plane.
+         * @param (String) reordering Description of a non-default reading, or null.
+         * @param (List<String>) problems Remaining rule violations.
          */
         Resolved(Plane plane, String reordering, List<String> problems)
         {
@@ -52,7 +61,8 @@ public final class PlaneResolver
         }
 
         /**
-         * @return true when the chosen reading satisfies the Q&amp;A rules
+         * Tells whether the plane breaks no rule.
+         * @return (boolean) True when the chosen reading satisfies the Q&amp;A rules.
          */
         public boolean isValid()
         {
@@ -60,18 +70,21 @@ public final class PlaneResolver
         }
     }
 
+    /** Static methods only; never instantiated. */
     private PlaneResolver()
     {
     }
 
     /**
-     * @param (double[]) coords 9 or 12 coordinates of the row, points in file order
-     * @param (double) eps geometric tolerance
-     * @return the chosen reading (never null)
+     * Chooses how to read a row's points: the course order, unless only the Q&amp;A order gives a
+     * valid plane.
+     * @param (double[]) coords 9 or 12 coordinates of the row, points in file order.
+     * @param (double) eps Geometric tolerance.
+     * @return (Resolved) The chosen reading (never null).
      */
     public static Resolved resolve(double[] coords, double eps)
     {
-        Plane course = fromCourseOrder(coords);
+        Plane        course   = fromCourseOrder(coords);
         List<String> problems = course.validate(eps);
         if (problems.isEmpty() || course.isTriangle())
         {
@@ -87,8 +100,9 @@ public final class PlaneResolver
     }
 
     /**
-     * @param (double[]) coords 9 or 12 coordinates, points in file order
-     * @return triangle (p1, p2, p3) or trapezoid a1 = p1, b = p2, a2 = p3, c = p4
+     * Reads a row's points in the course order.
+     * @param (double[]) coords 9 or 12 coordinates, points in file order.
+     * @return (Plane) Triangle (p1, p2, p3) or trapezoid a1 = p1, b = p2, a2 = p3, c = p4.
      */
     public static Plane fromCourseOrder(double[] coords)
     {

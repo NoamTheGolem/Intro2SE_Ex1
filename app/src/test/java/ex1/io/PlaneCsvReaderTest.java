@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 
 import ex1.core.Plane;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 
@@ -27,19 +28,26 @@ public class PlaneCsvReaderTest
             + "\"3\",\"200\",\"200\",\"-30\",\"-50\",\"200\",\"400\",\"400\",\"250\",\"400\",\"\",\"\",\"\"\n"
             + "\"4\",\"200\",\"50\",\"0\",\"200\",\"0\",\"500\",\"200\",\"350\",\"0\",\"200\",\"400\",\"500\"\n";
 
+    /** Rows: a triangle with commas, a rectangle with spaces as separators. */
     private static final String TRIANGLE = "5,0,0, 0,10,0, 10,10,0";
-    private static final String RECT = "0 0 1  10 0 1  0 20 1  10 20 1";
+    private static final String RECT     = "0 0 1  10 0 1  0 20 1  10 20 1";
 
     /**
-     * @param (String) text CSV content
-     * @return parse result
-     * @throws (IOException) never for a StringReader
+     * Reads CSV text.
+     * @param (String) text CSV content.
+     * @return (PlaneCsvReader.Result) Parse result.
+     * @throws (IOException) Never for a StringReader.
      */
     private static PlaneCsvReader.Result read(String text) throws IOException
     {
         return PlaneCsvReader.read(new StringReader(text), Plane.DEFAULT_EPS);
     }
 
+    /**
+     * Checks the course's file as it is (quotes, the count column, empty cells): 4 rows of 3, 4, 3
+     * and 4 points, the coordinates intact (TC-40).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void readsCourseExampleFile() throws IOException
     {
@@ -54,6 +62,11 @@ public class PlaneCsvReaderTest
         assertEquals(500.0, r.rows.get(3).plane.c().z, 0.0);
     }
 
+    /**
+     * Checks the course's row 3, doubtful but drawn as given, and row 4, a valid trapezoid with no
+     * warning; the messages say where the row is (TC-44).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void courseFileRow3IsDoubtfulAndRow4IsAValidTrapezoid() throws IOException
     {
@@ -75,6 +88,10 @@ public class PlaneCsvReaderTest
         assertEquals(4, r.rows.get(2).line);
     }
 
+    /**
+     * Checks rows of 9 and 12 numbers, spaces as separators, with their line numbers kept (TC-41).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void readsPlainTrianglesAndTrapezoids() throws IOException
     {
@@ -87,6 +104,11 @@ public class PlaneCsvReaderTest
         assertTrue(r.warnings().isEmpty());
     }
 
+    /**
+     * Checks that a byte order mark, the header, comments, blank lines and the empty rows a
+     * spreadsheet leaves are skipped (TC-42).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void skipsHeaderCommentsBlankAndEmptySpreadsheetRows() throws IOException
     {
@@ -96,6 +118,11 @@ public class PlaneCsvReaderTest
         assertEquals(5, r.rows.get(0).line);
     }
 
+    /**
+     * Checks that bad rows between good ones become black frames in their place, so the frames keep
+     * the rows' order (TC-45).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void badRowsBecomeBlackFramesInPlace() throws IOException
     {
@@ -110,6 +137,11 @@ public class PlaneCsvReaderTest
         assertTrue(r.rows.get(2).warnings.get(0).contains("not a list of numbers"));
     }
 
+    /**
+     * Checks that a point count that does not match the numbers given makes a black frame, with a
+     * message that says both (TC-43).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void countMustMatchThePointsGiven() throws IOException
     {
@@ -127,23 +159,33 @@ public class PlaneCsvReaderTest
         assertTrue(bad.rows.get(1).warnings.get(0).contains("got 11 numbers"));
     }
 
+    /**
+     * Checks the lecturer's edge_cases.csv: 16 rows, a plane in rows 1-8 and none in 9-16, warnings
+     * for rows 7-16 (TC-49).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void lecturerEdgeCasesGiveTheExpectedFrames() throws IOException
     {
-        java.io.File f = new java.io.File("data/course/edge_cases.csv");
+        File                  f = new File("data/course/edge_cases.csv");
         PlaneCsvReader.Result r = PlaneCsvReader.read(f, Plane.DEFAULT_EPS);
         assertTrue(r.errors.toString(), r.isValid());
         // "Expected: 16 frames; black: frames 6, 9 to 16; a warning for frames 7 to 16."
         assertEquals(16, r.rows.size());
         for (int i = 0; i < 16; i++)
         {
-            int frame = i + 1;
-            PlaneCsvReader.Entry e = r.rows.get(i);
+            int                  frame = i + 1;
+            PlaneCsvReader.Entry e     = r.rows.get(i);
             assertEquals("frame " + frame + " drawn", frame <= 8, e.plane != null);
             assertEquals("frame " + frame + " warned: " + e.warnings, frame >= 7, !e.warnings.isEmpty());
         }
     }
 
+    /**
+     * Checks that a row whose points are all the same is a black frame, and the file still valid
+     * (TC-46).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void degeneratePlaneIsBlackFrame() throws IOException
     {
@@ -152,6 +194,11 @@ public class PlaneCsvReaderTest
         assertTrue(r.isValid());
     }
 
+    /**
+     * Checks that a file with only comments or only junk is an error, not a video of black frames
+     * (TC-47).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void fileWithoutUsablePlaneIsAnError() throws IOException
     {
@@ -159,6 +206,11 @@ public class PlaneCsvReaderTest
         assertFalse(read("1,2,3\nabc\n").isValid());
     }
 
+    /**
+     * Checks that oblique, fractional planes written by the app read back with no warning, as the
+     * same shapes (TC-48).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void writerOutputSurvivesARoundTrip() throws IOException
     {
@@ -179,19 +231,24 @@ public class PlaneCsvReaderTest
         assertEquals(original.imageHeight(), r.rows.get(0).plane.imageHeight());
         assertEquals(original.a1().x, r.rows.get(0).plane.a1().x, 1e-6);
         // The same plane rounded to 3 decimals (the old writer) would already break the EPS rule.
-        ex1.app.PlaneSpec tri = new ex1.app.PlaneSpec(50.5, 60.5, 70.5, 10, 20, 30, 120.7, 0.0, 99.9);
-        PlaneCsvReader.Result t = read(ex1.io.PlaneCsvWriter.row(tri.toPlane()) + "\n");
+        ex1.app.PlaneSpec     tri = new ex1.app.PlaneSpec(50.5, 60.5, 70.5, 10, 20, 30, 120.7, 0.0, 99.9);
+        PlaneCsvReader.Result t   = read(ex1.io.PlaneCsvWriter.row(tri.toPlane()) + "\n");
         assertTrue(t.rows.get(0).warnings.toString(), t.rows.get(0).warnings.isEmpty());
         assertTrue(t.rows.get(0).plane.isTriangle());
     }
 
+    /**
+     * Checks that the lecturer's 8-decimal rows and a plane of 17 significant digits survive a
+     * write and a read bit for bit (TC-48).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void lecturerRowsSurviveAWriteReadCycleBitForBit() throws IOException
     {
         // head.csv row 280 (8 decimals) and an interpolated plane (17 significant digits).
         String lecturer = "3,41.64058498,78.64882498,32.22425753,162.61453132,112.46805458,161.14890225,178.2448837,191.38312044,0.12684021,,,";
-        Plane p = read(lecturer + "\n").rows.get(0).plane;
-        Plane q = read(ex1.io.PlaneCsvWriter.row(p) + "\n").rows.get(0).plane;
+        Plane  p        = read(lecturer + "\n").rows.get(0).plane;
+        Plane  q        = read(ex1.io.PlaneCsvWriter.row(p) + "\n").rows.get(0).plane;
         assertEquals(p.a1().x, q.a1().x, 0.0);
         assertEquals(p.b().y, q.b().y, 0.0);
         assertEquals(p.c().z, q.c().z, 0.0);

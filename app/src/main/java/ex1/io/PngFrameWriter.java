@@ -13,16 +13,23 @@ import javax.imageio.ImageIO;
  */
 public final class PngFrameWriter implements VideoWriter
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The folder, the frame size, and the number of the next frame. */
     private final File dir;
-    private final int width;
-    private final int height;
-    private int index;
+    private final int  width;
+    private final int  height;
+    private int        index;
 
     /**
-     * @param (File) dir destination folder (created if missing)
-     * @param (int) width frame width
-     * @param (int) height frame height
-     * @throws (IOException) if the folder cannot be created
+     * Creates the writer and its folder.
+     * @param (File) dir Destination folder (created if missing).
+     * @param (int) width Frame width.
+     * @param (int) height Frame height.
+     * @throws (IOException) If the folder cannot be created.
      */
     public PngFrameWriter(File dir, int width, int height) throws IOException
     {
@@ -36,11 +43,16 @@ public final class PngFrameWriter implements VideoWriter
         this.index = 0;
     }
 
+    /**
+     * Saves the frame as the next PNG file: frame_0000.png, frame_0001.png, ...
+     * @param (byte[]) grey Width*height grey levels, row-major.
+     * @throws (IOException) When the file cannot be written.
+     */
     @Override
     public void writeFrame(byte[] grey) throws IOException
     {
         BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
-        byte[] dst = ((DataBufferByte) img.getRaster().getDataBuffer()).getData();
+        byte[]        dst = ((DataBufferByte) img.getRaster().getDataBuffer()).getData();
         System.arraycopy(grey, 0, dst, 0, dst.length);
         File f = new File(dir, String.format("frame_%04d.png", index));
         if (!ImageIO.write(img, "png", f))
@@ -50,6 +62,7 @@ public final class PngFrameWriter implements VideoWriter
         index++;
     }
 
+    /** Does nothing: every PNG is complete once written. */
     @Override
     public void close()
     {

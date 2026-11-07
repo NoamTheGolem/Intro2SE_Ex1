@@ -13,12 +13,14 @@ public enum VoxelType
     UINT32(4, false),
     FLOAT32(4, true);
 
-    private final int bytes;
+    /** Bytes per voxel, and whether the values can be negative. */
+    private final int     bytes;
     private final boolean signed;
 
     /**
-     * @param (int) bytes size of one voxel in bytes
-     * @param (boolean) signed whether the integer type is signed
+     * Creates a type.
+     * @param (int) bytes Size of one voxel in bytes.
+     * @param (boolean) signed Whether the integer type is signed.
      */
     VoxelType(int bytes, boolean signed)
     {
@@ -27,7 +29,8 @@ public enum VoxelType
     }
 
     /**
-     * @return size of one voxel in bytes
+     * Gives the size of one voxel.
+     * @return (int) Size of one voxel in bytes.
      */
     public int bytes()
     {
@@ -35,7 +38,8 @@ public enum VoxelType
     }
 
     /**
-     * @return true for signed types (and float)
+     * Tells whether the values can be negative.
+     * @return (boolean) True for signed types (and float).
      */
     public boolean isSigned()
     {

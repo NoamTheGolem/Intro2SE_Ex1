@@ -5,14 +5,21 @@ package ex1.core;
  */
 public final class ByteVolume extends Volume
 {
-    private final byte[] data;
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The samples, and whether they are read as unsigned. */
+    private final byte[]  data;
     private final boolean unsigned;
 
     /**
-     * @param (int) sx size along x
-     * @param (int) sy size along y
-     * @param (int) sz size along z
-     * @param (VoxelType) type INT8 or UINT8
+     * Creates an 8-bit volume filled with 0.
+     * @param (int) sx Size along x.
+     * @param (int) sy Size along y.
+     * @param (int) sz Size along z.
+     * @param (VoxelType) type INT8 or UINT8.
      */
     ByteVolume(int sx, int sy, int sz, VoxelType type)
     {
@@ -22,13 +29,19 @@ public final class ByteVolume extends Volume
     }
 
     /**
-     * @return backing array (x fastest), for fast bulk loading
+     * Gives direct access to the samples.
+     * @return (byte[]) Backing array (x fastest), for fast bulk loading.
      */
     public byte[] data()
     {
         return data;
     }
 
+    /**
+     * Reads one sample (an unsigned type as 0..255).
+     * @param (int) index Flat index.
+     * @return (float) The value.
+     */
     @Override
     public float valueAt(int index)
     {
@@ -39,6 +52,11 @@ public final class ByteVolume extends Volume
         return data[index];
     }
 
+    /**
+     * Stores one sample, cut to 8 bits.
+     * @param (int) index Flat index.
+     * @param (double) value The value.
+     */
     @Override
     public void setValue(int index, double value)
     {

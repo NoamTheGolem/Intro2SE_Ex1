@@ -15,6 +15,10 @@ import org.junit.Test;
  */
 public class SweepTest
 {
+    /**
+     * Checks the sweep of an axis plane: every slice once, one voxel apart, in order, with the
+     * current plane among them (TC-107).
+     */
     @Test
     public void axisPlaneVisitsEverySliceOnceAndContainsTheCurrentPlane()
     {
@@ -34,6 +38,10 @@ public class SweepTest
         }
     }
 
+    /**
+     * Checks that a large volume is swept in larger steps (hundreds of frames, not thousands) and
+     * that a triangle stays a triangle (TC-108).
+     */
     @Test
     public void bigVolumesUseLargerStepsAndATriangleStaysATriangle()
     {
@@ -48,10 +56,14 @@ public class SweepTest
         assertEquals(t.c().z, current.c().z, 1e-9);
     }
 
+    /**
+     * Checks that points on one line (no normal to sweep along) give a video of that one plane
+     * (TC-108).
+     */
     @Test
     public void planeWithoutANormalIsTheWholeVideo()
     {
-        Plane line = Plane.triangle(new Vec3(0, 0, 0), new Vec3(5, 5, 5), new Vec3(10, 10, 10));
+        Plane      line = Plane.triangle(new Vec3(0, 0, 0), new Vec3(5, 5, 5), new Vec3(10, 10, 10));
         Sweep.Pass pass = Sweep.through(line, 20, 20, 20);
         assertEquals(1, pass.planes.size());
         assertEquals(0, pass.current);

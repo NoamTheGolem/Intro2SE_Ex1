@@ -34,23 +34,42 @@ import javax.swing.plaf.basic.BasicGraphicsUtils;
  */
 public final class FlatButtonUI extends BasicButtonUI
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Client property: true while the focus came from the keyboard. */
     private static final String KEYBOARD_FOCUS = "ex1.keyboardFocus";
+
+    /** The usual button's variant. */
     private static final String SECONDARY = "secondary";
-    private static final int GHOST_HOVER_ALPHA = 24;
+
+    /** How much a ghost button lights up under the mouse and when pressed (of 255). */
+    private static final int GHOST_HOVER_ALPHA   = 24;
     private static final int GHOST_PRESSED_ALPHA = 44;
+
+    /** Width of the focus ring. */
     private static final float RING_WIDTH = 2f;
 
+    /** Shows the ring only for keyboard focus. */
     private FocusListener focusListener;
 
     /**
-     * @param (JComponent) c the button
-     * @return a new UI (each button has its own focus listener)
+     * Creates the look of one button (called by Swing).
+     * @param (JComponent) c The button.
+     * @return (ComponentUI) A new UI (each button has its own focus listener).
      */
     public static ComponentUI createUI(JComponent c)
     {
         return new FlatButtonUI();
     }
 
+    /**
+     * Makes the button see-through around its rounded shape, lit under the mouse, and padded by its
+     * margin (so setMargin() makes a compact button).
+     * @param (AbstractButton) b The button.
+     */
     @Override
     protected void installDefaults(AbstractButton b)
     {
@@ -64,12 +83,20 @@ public final class FlatButtonUI extends BasicButtonUI
         }
     }
 
+    /**
+     * Listens to the focus, to show the ring only when the focus came from the keyboard.
+     * @param (AbstractButton) b The button.
+     */
     @Override
     protected void installListeners(final AbstractButton b)
     {
         super.installListeners(b);
         focusListener = new FocusListener()
         {
+            /**
+             * Shows the ring when Tab brought the focus here, not after a click.
+             * @param (FocusEvent) e The focus change.
+             */
             @Override
             public void focusGained(FocusEvent e)
             {
@@ -78,6 +105,10 @@ public final class FlatButtonUI extends BasicButtonUI
                 b.repaint();
             }
 
+            /**
+             * Hides the ring.
+             * @param (FocusEvent) e The focus change.
+             */
             @Override
             public void focusLost(FocusEvent e)
             {
@@ -88,6 +119,10 @@ public final class FlatButtonUI extends BasicButtonUI
         b.addFocusListener(focusListener);
     }
 
+    /**
+     * Removes the focus listener when the button gets another look.
+     * @param (AbstractButton) b The button.
+     */
     @Override
     protected void uninstallListeners(AbstractButton b)
     {
@@ -99,18 +134,24 @@ public final class FlatButtonUI extends BasicButtonUI
         }
     }
 
+    /**
+     * Paints the button: its fill and border for its kind and state, the focus ring, then the icon
+     * and the text.
+     * @param (Graphics) g Graphics of the button.
+     * @param (JComponent) c The button.
+     */
     @Override
     public void paint(Graphics g, JComponent c)
     {
-        AbstractButton b = (AbstractButton) c;
-        String variant = variant(b);
-        Graphics2D g2 = (Graphics2D) g.create();
+        AbstractButton b       = (AbstractButton) c;
+        String         variant = variant(b);
+        Graphics2D     g2      = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-        int w = c.getWidth();
-        int h = c.getHeight();
+        int   w     = c.getWidth();
+        int   h     = c.getHeight();
         Shape shape = shape(variant, w, h);
-        Color fill = fill(b, variant);
+        Color fill  = fill(b, variant);
         if (fill != null)
         {
             g2.setColor(fill);
@@ -138,6 +179,13 @@ public final class FlatButtonUI extends BasicButtonUI
         super.paint(g, c);
     }
 
+    /**
+     * Writes the text in the colour of the button's kind and state.
+     * @param (Graphics) g Graphics of the button.
+     * @param (AbstractButton) b The button.
+     * @param (Rectangle) textRect Where the text goes.
+     * @param (String) text The text.
+     */
     @Override
     protected void paintText(Graphics g, AbstractButton b, Rectangle textRect, String text)
     {
@@ -148,24 +196,41 @@ public final class FlatButtonUI extends BasicButtonUI
                 textRect.x + shift, textRect.y + fm.getAscent() + shift);
     }
 
+    /**
+     * Paints nothing: the pressed look is part of the fill.
+     * @param (Graphics) g Graphics of the button.
+     * @param (AbstractButton) b The button.
+     */
     @Override
     protected void paintButtonPressed(Graphics g, AbstractButton b)
     {
         // The pressed look is part of the fill (see fill).
     }
 
+    /**
+     * Paints nothing: the focus ring is part of paint, and only for keyboard focus.
+     * @param (Graphics) g Graphics of the button.
+     * @param (AbstractButton) b The button.
+     * @param (Rectangle) viewRect The button's inside.
+     * @param (Rectangle) textRect Where the text is.
+     * @param (Rectangle) iconRect Where the icon is.
+     */
     @Override
     protected void paintFocus(Graphics g, AbstractButton b, Rectangle viewRect, Rectangle textRect, Rectangle iconRect)
     {
         // The focus ring is drawn in paint, only for keyboard focus.
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (AbstractButton) b button
-     * @return its variant: the client property, else primary for a dialog's default button, ghost
-     *         for a button without a filled content area, else the usual (secondary) button
+     * Finds which kind of button this is.
+     * @param (AbstractButton) b Button.
+     * @return (String) Its variant: the client property, else primary for a dialog's default
+     *                  button, ghost for a button without a filled content area, else the usual
+     *                  (secondary) button.
      */
     static String variant(AbstractButton b)
     {
@@ -186,10 +251,12 @@ public final class FlatButtonUI extends BasicButtonUI
     }
 
     /**
-     * @param (String) variant variant
-     * @param (double) w width
-     * @param (double) h height
-     * @return the outline: rounded, or for a half of a switch rounded on its outer side only
+     * Gives the button's outline.
+     * @param (String) variant Variant.
+     * @param (double) w Width.
+     * @param (double) h Height.
+     * @return (Shape) The outline: rounded, or for a half of a switch rounded on its outer side
+     *                 only.
      */
     private static Shape shape(String variant, double w, double h)
     {
@@ -206,15 +273,17 @@ public final class FlatButtonUI extends BasicButtonUI
     }
 
     /**
-     * @param (AbstractButton) b button
-     * @param (String) variant variant
-     * @return background colour for its state, or null for none
+     * Chooses the background for the button's kind and state (disabled, pressed, under the mouse,
+     * selected).
+     * @param (AbstractButton) b Button.
+     * @param (String) variant Variant.
+     * @return (Color) Background colour for its state, or null for none.
      */
     private static Color fill(AbstractButton b, String variant)
     {
-        ButtonModel m = b.getModel();
-        boolean pressed = m.isArmed() && m.isPressed();
-        boolean over = m.isRollover();
+        ButtonModel m       = b.getModel();
+        boolean     pressed = m.isArmed() && m.isPressed();
+        boolean     over    = m.isRollover();
         if (Theme.GHOST.equals(variant))
         {
             if (!b.isEnabled())
@@ -275,9 +344,10 @@ public final class FlatButtonUI extends BasicButtonUI
     }
 
     /**
-     * @param (AbstractButton) b button
-     * @param (String) variant variant
-     * @return border colour, or null for none
+     * Chooses the border colour (filled and ghost buttons have none).
+     * @param (AbstractButton) b Button.
+     * @param (String) variant Variant.
+     * @return (Color) Border colour, or null for none.
      */
     private static Color edge(AbstractButton b, String variant)
     {
@@ -293,9 +363,10 @@ public final class FlatButtonUI extends BasicButtonUI
     }
 
     /**
-     * @param (AbstractButton) b button
-     * @param (String) variant variant
-     * @return text colour for its state
+     * Chooses the text colour for the button's kind and state; its icon uses the same.
+     * @param (AbstractButton) b Button.
+     * @param (String) variant Variant.
+     * @return (Color) Text colour for its state.
      */
     static Color textColour(AbstractButton b, String variant)
     {
@@ -323,8 +394,9 @@ public final class FlatButtonUI extends BasicButtonUI
     }
 
     /**
-     * @param (String) variant variant
-     * @return true for either half of a switch
+     * Tells whether a variant is half of a two-part switch.
+     * @param (String) variant Variant.
+     * @return (boolean) True for either half of a switch.
      */
     private static boolean isSegment(String variant)
     {

@@ -10,6 +10,7 @@ import org.junit.Test;
  */
 public class IntensityWindowTest
 {
+    /** Checks that the window maps linearly between its ends and clamps outside them (TC-60). */
     @Test
     public void mapsLinearlyAndClamps()
     {
@@ -22,6 +23,7 @@ public class IntensityWindowTest
         assertEquals(255, w.grey(1e9));
     }
 
+    /** Checks that the percentile window ignores one outlier far above the rest (TC-61). */
     @Test
     public void percentilesIgnoreOutliers()
     {
@@ -36,14 +38,16 @@ public class IntensityWindowTest
         assertTrue("high near 990, was " + w.high(), w.high() > 900 && w.high() < 1100);
     }
 
+    /** Checks that a volume of one value still gets a window wider than zero (TC-62). */
     @Test
     public void constantVolumeDoesNotDivideByZero()
     {
-        Volume v = Volume.create(VoxelType.UINT8, 4, 4, 4);
+        Volume          v = Volume.create(VoxelType.UINT8, 4, 4, 4);
         IntensityWindow w = IntensityWindow.fromPercentiles(v, 0.5, 99.5);
         assertTrue(w.high() > w.low());
     }
 
+    /** Checks that a small image is centred in a larger frame (TC-63). */
     @Test
     public void toGreyCentresImageInFrame()
     {
@@ -58,6 +62,7 @@ public class IntensityWindowTest
         assertEquals(0, frame[0] & 0xFF);
     }
 
+    /** Checks that a window whose two ends are equal is refused (TC-62). */
     @Test(expected = IllegalArgumentException.class)
     public void rejectsEmptyWindow()
     {

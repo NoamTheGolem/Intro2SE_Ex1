@@ -27,14 +27,19 @@ import org.junit.Test;
  */
 public class ExportRoundTripTest
 {
+    /**
+     * Checks that the app's video and the command line's rendering of the CSV saved next to it are
+     * the same frames, byte for byte (TC-86).
+     * @throws (IOException) When a test file cannot be written or read.
+     */
     @Test
     public void appFramesEqualCommandLineFramesOfTheSavedCsv() throws IOException
     {
         Volume volume = PhantomGenerator.build("spheres", VoxelType.UINT8, 64);
         IntensityWindow window = IntensityWindow.fromPercentiles(volume,
                 IntensityWindow.DEFAULT_LOW_PERCENTILE, IntensityWindow.DEFAULT_HIGH_PERCENTILE);
-        PlaneSpec from = new PlaneSpec(31.5, 31.5, 31.5, 30, -20, 0, 50, 1.0, 44);
-        PlaneSpec to = new PlaneSpec(40.25, 20.75, 33.0, -75, 40, 25, 38, 0.0, 61);
+        PlaneSpec   from   = new PlaneSpec(31.5, 31.5, 31.5, 30, -20, 0, 50, 1.0, 44);
+        PlaneSpec   to     = new PlaneSpec(40.25, 20.75, 33.0, -75, 40, 25, 38, 0.0, 61);
         List<Plane> source = new ArrayList<Plane>();
         for (int k = 0; k <= 12; k++)
         {
@@ -51,7 +56,7 @@ public class ExportRoundTripTest
         assertTrue(back.warnings().toString(), back.warnings().isEmpty());
         assertEquals(inApp.size(), back.planes().size());
 
-        Projector nn = Projector.create(Projector.Interpolation.NEAREST);
+        Projector     nn  = Projector.create(Projector.Interpolation.NEAREST);
         FrameRenderer app = new FrameRenderer(volume, inApp, window, nn);
         FrameRenderer cli = new FrameRenderer(volume, back.planes(), window, nn);
         assertEquals(app.width(), cli.width());
@@ -62,6 +67,10 @@ public class ExportRoundTripTest
         }
     }
 
+    /**
+     * Checks the app's video: one frame per step of the sweep, and a plane that cannot be drawn
+     * gives a black frame in its place (TC-109).
+     */
     @Test
     public void defaultVideoHasOneFramePerSweepStepAndABadPlaneIsBlack()
     {
@@ -70,18 +79,18 @@ public class ExportRoundTripTest
         Volume volume = PhantomGenerator.build("spheres", VoxelType.UINT8, 48);
         IntensityWindow window = IntensityWindow.fromPercentiles(volume,
                 IntensityWindow.DEFAULT_LOW_PERCENTILE, IntensityWindow.DEFAULT_HIGH_PERCENTILE);
-        Plane start = new PlaneSpec(23.5, 23.5, 23.5, 35, -25, 10, 40, 0.0, 36).toPlane();
+        Plane       start  = new PlaneSpec(23.5, 23.5, 23.5, 35, -25, 10, 40, 0.0, 36).toPlane();
         List<Plane> source = new ArrayList<Plane>(Sweep.through(start, 48, 48, 48).planes);
-        int black = source.size() / 2;
-        Vec3 o = new Vec3(5, 5, 5);
+        int         black  = source.size() / 2;
+        Vec3        o      = new Vec3(5, 5, 5);
         source.set(black, Plane.triangle(o, o, o));
         List<Plane> frames = StudioApp.videoFrames(source);
         assertEquals(source.size(), frames.size());
         assertEquals(null, frames.get(black));
 
-        Projector nn = Projector.create(Projector.Interpolation.NEAREST);
-        FrameRenderer video = new FrameRenderer(volume, frames, window, nn);
-        byte[] blackFrame = video.render(black).clone();
+        Projector     nn         = Projector.create(Projector.Interpolation.NEAREST);
+        FrameRenderer video      = new FrameRenderer(volume, frames, window, nn);
+        byte[]        blackFrame = video.render(black).clone();
         for (int i = 0; i < blackFrame.length; i++)
         {
             assertEquals("pixel " + i, 0, blackFrame[i]);

@@ -17,15 +17,25 @@ import org.junit.Test;
  */
 public class PlaneSpecTest
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The assignment's EPS. */
     private static final double EPS = Plane.DEFAULT_EPS;
 
+    /**
+     * Checks the presets: each axis plane lies on the middle slice of its axis and shows the whole
+     * slice; the triangle and the oblique plane are valid (TC-80).
+     */
     @Test
     public void presetsAreValidAndAxisAligned()
     {
-        Volume v = Volume.create(VoxelType.UINT8, 100, 80, 60);
-        Plane xy = PlaneSpec.xy(v).toPlane();
-        Plane xz = PlaneSpec.xz(v).toPlane();
-        Plane yz = PlaneSpec.yz(v).toPlane();
+        Volume v  = Volume.create(VoxelType.UINT8, 100, 80, 60);
+        Plane  xy = PlaneSpec.xy(v).toPlane();
+        Plane  xz = PlaneSpec.xz(v).toPlane();
+        Plane  yz = PlaneSpec.yz(v).toPlane();
         assertTrue(xy.validate(EPS).isEmpty());
         assertTrue(xz.validate(EPS).isEmpty());
         assertTrue(yz.validate(EPS).isEmpty());
@@ -46,6 +56,10 @@ public class PlaneSpecTest
         assertTrue(PlaneSpec.oblique(v).toPlane().validate(EPS).isEmpty());
     }
 
+    /**
+     * Checks that any spec, whatever its angles and shape, gives a plane that breaks no rule, and a
+     * triangle exactly when the top ratio is 0 (TC-81).
+     */
     @Test
     public void anySpecIsAValidPlane()
     {
@@ -57,18 +71,22 @@ public class PlaneSpecTest
         };
         for (int i = 0; i < cases.length; i++)
         {
-            double[] c = cases[i];
+            double[]  c = cases[i];
             PlaneSpec s = new PlaneSpec(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8]);
-            Plane p = s.toPlane();
+            Plane     p = s.toPlane();
             assertTrue("case " + i + ": " + p.validate(EPS), p.validate(EPS).isEmpty());
             assertEquals("case " + i, c[7] <= 0.0, p.isTriangle());
         }
     }
 
+    /**
+     * Checks that a spec turned into a plane and back gives the same spec, so a loaded row edits as
+     * the same angles (TC-82).
+     */
     @Test
     public void fromPlaneRecoversTheSpec()
     {
-        PlaneSpec s = new PlaneSpec(101.5, 77.25, 64.0, 33, -21, 12, 171, 0.62, 203);
+        PlaneSpec s    = new PlaneSpec(101.5, 77.25, 64.0, 33, -21, 12, 171, 0.62, 203);
         PlaneSpec back = PlaneSpec.fromPlane(s.toPlane());
         assertEquals(s.cx, back.cx, 1e-6);
         assertEquals(s.cy, back.cy, 1e-6);
@@ -81,12 +99,16 @@ public class PlaneSpecTest
         assertEquals(s.height, back.height, 1e-6);
     }
 
+    /**
+     * Checks the course's rows as specs: row 1 a 400 x 400 triangle, row 4 a top ratio of 0.75
+     * (TC-83).
+     */
     @Test
     public void fromPlaneHandlesTheCourseRows()
     {
         // Row 1 of Ex0.csv (triangle in the plane y = 200) and row 4 read as rails.
-        Plane row1 = Plane.triangle(new Vec3(200, 200, 0), new Vec3(0, 200, 400), new Vec3(400, 200, 400));
-        PlaneSpec s1 = PlaneSpec.fromPlane(row1);
+        Plane     row1 = Plane.triangle(new Vec3(200, 200, 0), new Vec3(0, 200, 400), new Vec3(400, 200, 400));
+        PlaneSpec s1   = PlaneSpec.fromPlane(row1);
         assertEquals(0.0, s1.topRatio, 1e-9);
         assertEquals(400.0, s1.width, 1e-6);
         assertEquals(400.0, s1.height, 1e-6);
@@ -101,6 +123,10 @@ public class PlaneSpecTest
         assertEquals(500.0, s4.height, 1e-6);
     }
 
+    /**
+     * Checks the planes between two specs: all valid, the yaw takes the short way round (170 to
+     * -170 through 180), and the ends are the keyframes (TC-84).
+     */
     @Test
     public void interpolationStaysValidAndEndsAtTheKeyframes()
     {
@@ -119,10 +145,13 @@ public class PlaneSpecTest
         assertEquals(b.cx, PlaneSpec.lerp(a, b, 1).cx, 0.0);
     }
 
+    /**
+     * Checks that sliding an axis plane by 3 changes only its constant coordinate, by 3 (TC-85).
+     */
     @Test
     public void slideMovesAlongTheNormalOnly()
     {
-        PlaneSpec s = PlaneSpec.xy(Volume.create(VoxelType.UINT8, 10, 10, 10));
+        PlaneSpec s     = PlaneSpec.xy(Volume.create(VoxelType.UINT8, 10, 10, 10));
         PlaneSpec moved = s.slide(3.0);
         assertEquals(s.cx, moved.cx, 1e-9);
         assertEquals(s.cy, moved.cy, 1e-9);

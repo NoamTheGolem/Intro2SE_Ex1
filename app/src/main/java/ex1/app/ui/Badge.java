@@ -14,16 +14,25 @@ import javax.swing.JComponent;
  */
 public final class Badge extends JComponent
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Version of the serialized form (Swing components are Serializable). */
     private static final long serialVersionUID = 1L;
-    private static final int PAD_X = 12;
-    private static final int HEIGHT = 28;
-    private static final int DOT = 7;
+
+    /** Sizes, in pixels. */
+    private static final int PAD_X   = 12;
+    private static final int HEIGHT  = 28;
+    private static final int DOT     = 7;
     private static final int DOT_GAP = 7;
 
-    private String text = "";
+    /** What the badge says, and whether it is live (amber dot). */
+    private String  text = "";
     private boolean live;
 
-    /** An empty badge. */
+    /** Creates an empty badge. */
     public Badge()
     {
         setFont(Theme.semibold(Theme.TEXT_SIZE));
@@ -31,8 +40,10 @@ public final class Badge extends JComponent
     }
 
     /**
-     * @param (String) newText what the badge says
-     * @param (boolean) isLive true while the number is being measured
+     * Changes what the badge says; the layout is redone only when the text (and so the width)
+     * changes.
+     * @param (String) newText What the badge says.
+     * @param (boolean) isLive True while the number is being measured.
      */
     public void show(String newText, boolean isLive)
     {
@@ -51,7 +62,8 @@ public final class Badge extends JComponent
     }
 
     /**
-     * @return the text shown
+     * Gives the text on show.
+     * @return (String) The text shown.
      */
     public String text()
     {
@@ -59,13 +71,18 @@ public final class Badge extends JComponent
     }
 
     /**
-     * @return true while live
+     * Tells whether the badge is live.
+     * @return (boolean) True while live.
      */
     public boolean isLive()
     {
         return live;
     }
 
+    /**
+     * Asks for room for the dot and the text.
+     * @return (Dimension) The badge's size.
+     */
     @Override
     public Dimension getPreferredSize()
     {
@@ -75,6 +92,10 @@ public final class Badge extends JComponent
         return new Dimension(w, HEIGHT);
     }
 
+    /**
+     * Draws the rounded badge: the dot (amber while live), then the text.
+     * @param (Graphics) g Graphics of the badge.
+     */
     @Override
     protected void paintComponent(Graphics g)
     {

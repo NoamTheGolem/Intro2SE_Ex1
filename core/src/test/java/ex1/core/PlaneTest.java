@@ -13,8 +13,15 @@ import org.junit.Test;
  */
 public class PlaneTest
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The assignment's EPS. */
     private static final double EPS = Plane.DEFAULT_EPS;
 
+    /** Checks that an isosceles triangle breaks no rule (TC-01). */
     @Test
     public void validIsoscelesTriangle()
     {
@@ -22,15 +29,17 @@ public class PlaneTest
         assertTrue(p.validate(EPS).isEmpty());
     }
 
+    /** Checks that a triangle with unequal sides is reported (TC-02). */
     @Test
     public void rejectsNonIsoscelesTriangle()
     {
-        Plane p = Plane.triangle(new Vec3(0, 0, 0), new Vec3(0, 10, 0), new Vec3(20, 10, 0));
+        Plane        p      = Plane.triangle(new Vec3(0, 0, 0), new Vec3(0, 10, 0), new Vec3(20, 10, 0));
         List<String> errors = p.validate(EPS);
         assertFalse(errors.isEmpty());
         assertTrue(errors.get(0).contains("side lengths differ"));
     }
 
+    /** Checks that sides that differ by less than EPS count as equal (TC-03). */
     @Test
     public void acceptsDifferenceJustBelowEps()
     {
@@ -38,6 +47,7 @@ public class PlaneTest
         assertTrue(p.validate(EPS).isEmpty());
     }
 
+    /** Checks that three points on one line are reported as collinear (TC-04). */
     @Test
     public void rejectsCollinearTriangle()
     {
@@ -45,6 +55,7 @@ public class PlaneTest
         assertTrue(p.validate(EPS).toString().contains("collinear"));
     }
 
+    /** Checks that a plane smaller than a voxel is reported as too small (TC-05). */
     @Test
     public void rejectsTinyPlane()
     {
@@ -52,6 +63,7 @@ public class PlaneTest
         assertTrue(p.validate(EPS).toString().contains("too small"));
     }
 
+    /** Checks that a coordinate that is not a number is reported (TC-06). */
     @Test
     public void rejectsNaN()
     {
@@ -59,6 +71,7 @@ public class PlaneTest
         assertTrue(p.validate(EPS).toString().contains("finite"));
     }
 
+    /** Checks that a rectangle is a valid trapezoid (TC-07). */
     @Test
     public void validRectangleAsTrapezoid()
     {
@@ -68,6 +81,7 @@ public class PlaneTest
         assertEquals(21, p.imageHeight());
     }
 
+    /** Checks that a top wider than its base is reported (TC-08). */
     @Test
     public void rejectsTopWiderThanBase()
     {
@@ -75,6 +89,7 @@ public class PlaneTest
         assertTrue(p.validate(EPS).toString().contains("must be <="));
     }
 
+    /** Checks that four points not in one plane are reported (TC-09). */
     @Test
     public void rejectsNonCoplanarTrapezoid()
     {
@@ -82,6 +97,10 @@ public class PlaneTest
         assertTrue(p.validate(EPS).toString().contains("coplanar"));
     }
 
+    /**
+     * Checks that the image includes both ends of every side: a side of length 10 gives 11 pixels
+     * (TC-07).
+     */
     @Test
     public void imageSizeIncludesBothEnds()
     {
@@ -91,6 +110,7 @@ public class PlaneTest
         assertEquals(11, p.imageHeight());
     }
 
+    /** Checks that 9 numbers make a triangle and 12 a trapezoid (TC-07). */
     @Test
     public void fromValuesBuildsBothShapes()
     {
@@ -98,12 +118,14 @@ public class PlaneTest
         assertFalse(Plane.fromValues(new double[12]).isTriangle());
     }
 
+    /** Checks that any other count of numbers is refused (TC-07). */
     @Test(expected = IllegalArgumentException.class)
     public void fromValuesRejectsWrongCount()
     {
         Plane.fromValues(new double[10]);
     }
 
+    /** Checks that a plane that is not isosceles is invalid but can still be drawn (TC-08). */
     @Test
     public void nonIsoscelesPlaneIsInvalidButRenderable()
     {
@@ -113,6 +135,7 @@ public class PlaneTest
         assertTrue(p.isRenderable());
     }
 
+    /** Checks that the image is wide enough for every row of a plane whose rails differ (TC-08). */
     @Test
     public void imageWidthCoversEveryRowOfANonIsoscelesPlane()
     {
@@ -123,6 +146,7 @@ public class PlaneTest
         assertTrue(p.imageWidth() >= 503);
     }
 
+    /** Checks that a plane of one point, or one far too large, cannot be drawn (TC-09). */
     @Test
     public void degenerateOrHugePlanesAreNotRenderable()
     {
@@ -131,6 +155,7 @@ public class PlaneTest
         assertFalse(Plane.triangle(new Vec3(Double.NaN, 0, 0), new Vec3(0, 1, 0), new Vec3(1, 1, 0)).isRenderable());
     }
 
+    /** Checks that rails that cross (a bow-tie, not a trapezoid) are bad (TC-09). */
     @Test
     public void crossedRailsAreRejected()
     {
@@ -142,6 +167,7 @@ public class PlaneTest
                 .validate(EPS).isEmpty());
     }
 
+    /** Checks that a top not parallel to its base is doubtful but drawn (TC-08). */
     @Test
     public void topNotParallelToBaseIsDoubtfulButDrawn()
     {
@@ -152,6 +178,10 @@ public class PlaneTest
         assertTrue(p.isRenderable());
     }
 
+    /**
+     * Checks the lecturer's bad planes (edge cases 12, 13, 14 and 16): not in one plane, on one
+     * line, far too large (TC-09).
+     */
     @Test
     public void nonCoplanarCollinearAndHugePlanesAreBad()
     {
@@ -173,6 +203,10 @@ public class PlaneTest
         assertTrue(Plane.triangle(new Vec3(99.5, 0, 300), new Vec3(0, 179, 300), new Vec3(199, 179, 300)).isRenderable());
     }
 
+    /**
+     * Checks that a top and a base that cross each other are bad, though the rails do not touch
+     * (TC-09).
+     */
     @Test
     public void bowTieWhoseBasesCrossIsBad()
     {

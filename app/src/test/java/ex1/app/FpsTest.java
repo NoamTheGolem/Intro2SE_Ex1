@@ -34,11 +34,22 @@ import org.junit.rules.TemporaryFolder;
  */
 public class FpsTest
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Side of the test volume, in voxels. */
     private static final int SIZE = 160;
 
+    /** Files of one test, deleted after it. */
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /**
+     * Checks that one slow frame (garbage collection) does not move the FPS, as the median ignores
+     * it; a whole run reports its median frame too, not the mean (TC-117).
+     */
     @Test
     public void oneSlowFrameDoesNotMoveTheFps()
     {
@@ -62,6 +73,7 @@ public class FpsTest
         assertEquals(0.0, FpsMeter.fpsOf(run, 0), 0.0);
     }
 
+    /** Checks that the FPS is written to three significant digits, thousands grouped (TC-118). */
     @Test
     public void theNumberIsShownToThreeSignificantDigits()
     {
@@ -73,6 +85,10 @@ public class FpsTest
         assertEquals("4.2 FPS", FpsMeter.format(4.2));
     }
 
+    /**
+     * Checks that the FPS label changes only the top-left corner of a frame, and that a black frame
+     * stays all black (TC-119).
+     */
     @Test
     public void exportedFramesShowTheFpsInTheCornerAndBlackFramesStayBlack()
     {
@@ -82,15 +98,15 @@ public class FpsTest
         List<Plane> planes = new ArrayList<Plane>();
         planes.add(apexUp(SIZE / 2.0));
         planes.add(null);
-        Projector nn = Projector.create(Projector.Interpolation.NEAREST);
-        FrameRenderer clean = new FrameRenderer(volume, planes, window, nn);
+        Projector     nn       = Projector.create(Projector.Interpolation.NEAREST);
+        FrameRenderer clean    = new FrameRenderer(volume, planes, window, nn);
         FrameRenderer labelled = new FrameRenderer(volume, planes, window, nn);
         labelled.setShowFps(true);
-        byte[] a = clean.render(0).clone();
-        byte[] b = labelled.render(0);
-        int w = clean.width();
-        int h = clean.height();
-        int changed = 0;
+        byte[] a       = clean.render(0).clone();
+        byte[] b       = labelled.render(0);
+        int    w       = clean.width();
+        int    h       = clean.height();
+        int    changed = 0;
         for (int i = 0; i < a.length; i++)
         {
             if (a[i] != b[i])
@@ -108,11 +124,15 @@ public class FpsTest
         }
     }
 
+    /**
+     * Checks that a frame too small to read the label gets none, and a large one gets readable text
+     * (TC-120).
+     */
     @Test
     public void aFrameTooSmallToReadTheLabelGetsNone()
     {
         FpsOverlay overlay = new FpsOverlay();
-        byte[] tiny = new byte[40 * 30];
+        byte[]     tiny    = new byte[40 * 30];
         assertFalse(overlay.draw(tiny, 40, 30, "2,110 FPS"));
         for (int i = 0; i < tiny.length; i++)
         {
@@ -131,16 +151,21 @@ public class FpsTest
         assertTrue(bright + " bright text pixels", bright > 30);
     }
 
+    /**
+     * Checks that the command line writes the FPS on the frames, and that --no-fps leaves them
+     * clean (TC-121).
+     * @throws (Exception) When a test file cannot be written or a program cannot be run.
+     */
     @Test
     public void commandLineWritesTheFpsUnlessNoFps() throws Exception
     {
         Volume volume = PhantomGenerator.build("spheres", VoxelType.UINT8, SIZE);
-        File nrrd = tmp.newFile("phantom.nrrd");
+        File   nrrd   = tmp.newFile("phantom.nrrd");
         NrrdWriter.write(volume, nrrd, true, ByteOrder.LITTLE_ENDIAN);
         Plane p = apexUp(SIZE / 2.0);
         String row = "3," + p.a1().x + "," + p.a1().y + "," + p.a1().z + "," + p.b().x + "," + p.b().y + "," + p.b().z
                 + "," + p.c().x + "," + p.c().y + "," + p.c().z + ",,,\n";
-        File csv = tmp.newFile("one.csv");
+        File             csv = tmp.newFile("one.csv");
         FileOutputStream out = new FileOutputStream(csv);
         out.write(("Number of Points (3 or 4),x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4\n" + row)
                 .getBytes(StandardCharsets.UTF_8));
@@ -155,8 +180,10 @@ public class FpsTest
     }
 
     /**
-     * @param (double) z height of the plane
-     * @return an isosceles triangle across the volume at that height, apex a at the top middle
+     * Makes a test plane whose frame has black top corners.
+     * @param (double) z Height of the plane.
+     * @return (Plane) An isosceles triangle across the volume at that height, apex a at the top
+     *                 middle.
      */
     private static Plane apexUp(double z)
     {
@@ -165,19 +192,20 @@ public class FpsTest
     }
 
     /**
-     * @param (File) nrrd volume
-     * @param (File) csv planes
-     * @param (String) name run name
-     * @param (String[]) extra extra options
-     * @return frame 0 as written by --frames
-     * @throws (Exception) when the run fails
+     * Runs the demo with --frames and reads back its first frame.
+     * @param (File) nrrd Volume.
+     * @param (File) csv Planes.
+     * @param (String) name Run name.
+     * @param (String[]) extra Extra options.
+     * @return (BufferedImage) Frame 0 as written by --frames.
+     * @throws (Exception) When the run fails.
      */
     private BufferedImage runAndReadFrame(File nrrd, File csv, String name, String[] extra) throws Exception
     {
-        File mp4 = new File(tmp.getRoot(), name + ".mp4");
-        File frames = new File(tmp.getRoot(), name);
-        String[] base = {nrrd.getPath(), csv.getPath(), mp4.getPath(), "--frames", frames.getPath()};
-        String[] args = new String[base.length + extra.length];
+        File     mp4    = new File(tmp.getRoot(), name + ".mp4");
+        File     frames = new File(tmp.getRoot(), name);
+        String[] base   = {nrrd.getPath(), csv.getPath(), mp4.getPath(), "--frames", frames.getPath()};
+        String[] args   = new String[base.length + extra.length];
         System.arraycopy(base, 0, args, 0, base.length);
         System.arraycopy(extra, 0, args, base.length, extra.length);
         Ex0.run(args);
@@ -185,12 +213,13 @@ public class FpsTest
     }
 
     /**
-     * @param (BufferedImage) img frame
-     * @param (int) x0 left
-     * @param (int) y0 top
-     * @param (int) w width
-     * @param (int) h height
-     * @return number of pixels brighter than 200 in the rectangle
+     * Counts the bright pixels in a rectangle of a frame.
+     * @param (BufferedImage) img Frame.
+     * @param (int) x0 Left.
+     * @param (int) y0 Top.
+     * @param (int) w Width.
+     * @param (int) h Height.
+     * @return (int) Number of pixels brighter than 200 in the rectangle.
      */
     private static int brightIn(BufferedImage img, int x0, int y0, int w, int h)
     {

@@ -46,82 +46,122 @@ final class VolumeView3D extends JComponent
     interface Host
     {
         /**
-         * @param (double) distance voxels to move the plane along its normal
+         * Called when the wheel moves the plane.
+         * @param (double) distance Voxels to move the plane along its normal.
          */
         void slidePlane(double distance);
 
         /**
-         * @param (Vec3) index the clicked point of the object, in voxel indices
+         * Called when a point of the object is clicked.
+         * @param (Vec3) index The clicked point of the object, in voxel indices.
          */
         void modelClicked(Vec3 index);
     }
 
+    /** Version of the serialized form (Swing components are Serializable). */
     private static final long serialVersionUID = 1L;
-    private static final int BACKGROUND = 0xFF000000 | Theme.WELL.getRGB();
-    private static final int BOX_COLOUR = 0xFF5F6878;
+
+    /** Colours: background, box, and the plane's outline, in front of and behind the object. */
+    private static final int BACKGROUND   = 0xFF000000 | Theme.WELL.getRGB();
+    private static final int BOX_COLOUR   = 0xFF5F6878;
     private static final int PLANE_COLOUR = 0xFF000000 | Theme.PLANE.getRGB();
     private static final int PLANE_HIDDEN = 0xFF7A4E12;
+
+    /**
+     * The mouse: degrees per pixel dragged, voxels and zoom per wheel notch, and a click's slack.
+     */
     private static final double ORBIT_DEGREES_PER_PIXEL = 0.4;
-    private static final double SLIDE_VOXELS_PER_TICK = 2.0;
+    private static final double SLIDE_VOXELS_PER_TICK   = 2.0;
+    private static final double ZOOM_PER_TICK           = 1.15;
+    private static final int    CLICK_SLOP              = 3;   // pixels a click may move and still be a click
+
+    /**
+     * The view fits this share of the volume's diagonal: the object fills it, not the box's
+     * corners.
+     */
+    private static final double FIT_DIAGONAL = 0.85;
+
+    /** lookAtPlane looks into the cut from this far to the side and from above, in degrees. */
+    private static final double LOOK_TURN  = 28;
+    private static final double LOOK_RAISE = 14;
+
+    /** How long nothing must move before the sharp frame is drawn. */
     private static final int SHARPEN_DELAY_MS = 160;
-    private static final int CLICK_SLOP = 3;
+
     /** Above this many pixels a moving frame takes one ray per 3 x 3 block instead of 2 x 2. */
     private static final long COARSE_LIMIT = 900000L;
+
     /** Above this many pixels even a still frame takes one ray per 2 x 2 block (a huge window). */
     private static final long SHARP_LIMIT = 2200000L;
 
-    private final transient Camera3D camera = new Camera3D();
-    private final transient Host host;
+    /** The camera, who hears the gestures, and the threads that draw. */
+    private final transient Camera3D        camera = new Camera3D();
+    private final transient Host            host;
     private final transient CutawayRenderer renderer;
     private final transient ExecutorService frames;
-    private transient Volume volume;
+
+    /** The state on show (set on the Swing thread; every frame takes a copy). */
+    private transient Volume          volume;
     private transient IntensityWindow window;
-    private transient VolumeGeometry geometry;
-    private transient SolidModel model;
-    private transient Plane plane;
-    private transient List<Vec3> points = new ArrayList<Vec3>();
-    private transient List<String> pointNames = new ArrayList<String>();
-    private transient String message;
+    private transient VolumeGeometry  geometry;
+    private transient SolidModel      model;
+    private transient Plane           plane;
+    private transient List<Vec3>      points     = new ArrayList<Vec3>();
+    private transient List<String>    pointNames = new ArrayList<String>();
+    private transient String          message;
+
+    /** Asks for the sharp frame once nothing has moved for a moment. */
     private final transient Timer sharpen;
+
+    /** Modes: cut open, picking points, coarse frames while something moves. */
     private boolean cutOpen = true;
     private boolean picking;
     private boolean coarse;
+
+    /** The camera is fitted to the volume again when the view changes size. */
     private boolean fitted;
-    private int fittedWidth;
-    private int fittedHeight;
+    private int     fittedWidth;
+    private int     fittedHeight;
+
+    /** Where the mouse was pressed and where it was last, to tell a click from a drag. */
     private int pressX;
     private int pressY;
     private int lastX;
     private int lastY;
 
-    // ---- handed between the Swing thread and the frame thread (guarded by lock)
+    /**
+     * Shared with the frame thread, under the lock: the newest request, whether the thread is busy,
+     * the frame on show and its job, and the buffer for the next frame.
+     */
     private final transient Object lock = new Object();
-    private transient Job pending;
-    private boolean working;
-    private transient Raster shownRaster;
-    private transient Job shownJob;
-    private transient Raster spare;
+    private transient Job          pending;
+    private boolean                working;
+    private transient Raster       shownRaster;
+    private transient Job          shownJob;
+    private transient Raster       spare;
 
     /** Everything one frame needs, copied on the Swing thread when the frame is asked for. */
     private static final class Job
     {
-        Camera3D camera;
-        int width;
-        int height;
-        int scale;
-        Volume volume;
+        /** The camera, the frame's size and pixel blocks, and the scene when it was asked for. */
+        Camera3D        camera;
+        int             width;
+        int             height;
+        int             scale;
+        Volume          volume;
         IntensityWindow window;
-        VolumeGeometry geometry;
-        SolidModel model;
-        Plane plane;
-        boolean cutOpen;
-        List<Vec3> points;
-        List<String> names;
+        VolumeGeometry  geometry;
+        SolidModel      model;
+        Plane           plane;
+        boolean         cutOpen;
+        List<Vec3>      points;
+        List<String>    names;
     }
 
     /**
-     * @param (Host) host receives plane gestures and clicks
-     * @param (int) threads threads that trace the rays of one frame
+     * Creates the view, its frame thread, the sharpen timer and the mouse handling.
+     * @param (Host) host Receives plane gestures and clicks.
+     * @param (int) threads Threads that trace the rays of one frame.
      */
     VolumeView3D(Host host, int threads)
     {
@@ -129,6 +169,11 @@ final class VolumeView3D extends JComponent
         this.renderer = new CutawayRenderer(threads);
         this.frames = Executors.newSingleThreadExecutor(new ThreadFactory()
         {
+            /**
+             * Makes the frame thread: a daemon, so it never keeps the program alive.
+             * @param (Runnable) r The thread's work.
+             * @return (Thread) The thread, not started yet.
+             */
             @Override
             public Thread newThread(Runnable r)
             {
@@ -143,6 +188,10 @@ final class VolumeView3D extends JComponent
         setToolTipText(null);
         sharpen = new Timer(SHARPEN_DELAY_MS, new ActionListener()
         {
+            /**
+             * Asks for the sharp frame once nothing has moved for a moment.
+             * @param (ActionEvent) e The timer's tick.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -153,6 +202,10 @@ final class VolumeView3D extends JComponent
         sharpen.setRepeats(false);
         addComponentListener(new ComponentAdapter()
         {
+            /**
+             * Draws coarse frames while the window is resized and a sharp one after.
+             * @param (ComponentEvent) e The resize.
+             */
             @Override
             public void componentResized(ComponentEvent e)
             {
@@ -162,6 +215,10 @@ final class VolumeView3D extends JComponent
         });
         MouseAdapter mouse = new MouseAdapter()
         {
+            /**
+             * Remembers where the press began, to tell a click from a drag.
+             * @param (MouseEvent) e The press.
+             */
             @Override
             public void mousePressed(MouseEvent e)
             {
@@ -171,6 +228,10 @@ final class VolumeView3D extends JComponent
                 lastY = e.getY();
             }
 
+            /**
+             * Turns the camera with the mouse.
+             * @param (MouseEvent) e The drag.
+             */
             @Override
             public void mouseDragged(MouseEvent e)
             {
@@ -180,6 +241,11 @@ final class VolumeView3D extends JComponent
                 moving();
             }
 
+            /**
+             * Passes a click (a press and release that hardly moved) on the object to the app, as
+             * the point the ray from that pixel hits first.
+             * @param (MouseEvent) e The release.
+             */
             @Override
             public void mouseReleased(MouseEvent e)
             {
@@ -194,6 +260,10 @@ final class VolumeView3D extends JComponent
                 }
             }
 
+            /**
+             * Turns the camera back to its start on a double-click (not while picking points).
+             * @param (MouseEvent) e The click.
+             */
             @Override
             public void mouseClicked(MouseEvent e)
             {
@@ -205,15 +275,19 @@ final class VolumeView3D extends JComponent
                 }
             }
 
+            /**
+             * Moves the plane along its normal, or zooms with Ctrl.
+             * @param (MouseWheelEvent) e The wheel turn.
+             */
             @Override
             public void mouseWheelMoved(MouseWheelEvent e)
             {
                 if (e.isControlDown())
                 {
-                    double factor = 1.15;
+                    double factor = ZOOM_PER_TICK;
                     if (e.getWheelRotation() > 0)
                     {
-                        factor = 1 / 1.15;
+                        factor = 1 / ZOOM_PER_TICK;
                     }
                     camera.zoomBy(factor);
                     moving();
@@ -229,12 +303,15 @@ final class VolumeView3D extends JComponent
         addMouseWheelListener(mouse);
     }
 
-    // ------------------------------------------------------------------ data in
+    // ==========================================
+    //                  DATA IN
+    // ==========================================
 
     /**
-     * @param (Volume) v volume (null clears the view)
-     * @param (IntensityWindow) w grey mapping
-     * @param (VolumeGeometry) g geometry
+     * Shows a new scan; the camera goes back to its start and the model follows once it is built.
+     * @param (Volume) v Volume (null clears the view).
+     * @param (IntensityWindow) w Grey mapping.
+     * @param (VolumeGeometry) g Geometry.
      */
     void setVolume(Volume v, IntensityWindow w, VolumeGeometry g)
     {
@@ -260,7 +337,8 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @param (SolidModel) m the solid, once built (null while building)
+     * Shows the solid model once it is built.
+     * @param (SolidModel) m The solid, once built (null while building).
      */
     void setModel(SolidModel m)
     {
@@ -278,7 +356,8 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @return the solid model shown, or null
+     * Gives the model on show.
+     * @return (SolidModel) The solid model shown, or null.
      */
     SolidModel model()
     {
@@ -286,9 +365,10 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @param (Plane) p cutting plane (null hides it)
-     * @param (List) pts points to mark
-     * @param (List) names their labels
+     * Cuts the object with a new plane and marks its points.
+     * @param (Plane) p Cutting plane (null hides it).
+     * @param (List<Vec3>) pts Points to mark.
+     * @param (List<String>) names Their labels.
      */
     void setPlane(Plane p, List<Vec3> pts, List<String> names)
     {
@@ -301,8 +381,7 @@ final class VolumeView3D extends JComponent
     /**
      * Turns the camera to look into the cut: from the side of the plane it already faces, a
      * little from the side and from above.
-     *
-     * @param (Plane) p the plane to look at
+     * @param (Plane) p The plane to look at.
      */
     void lookAtPlane(Plane p)
     {
@@ -320,12 +399,13 @@ final class VolumeView3D extends JComponent
         {
             n = n.scale(-1);
         }
-        camera.lookFrom(n, 28, 14);
+        camera.lookFrom(n, LOOK_TURN, LOOK_RAISE);
         moving();
     }
 
     /**
-     * @param (boolean) on cut the object open along the plane
+     * Switches cutting the object open on or off (the app keeps it on).
+     * @param (boolean) on Cut the object open along the plane.
      */
     void setCutOpen(boolean on)
     {
@@ -334,7 +414,8 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @param (boolean) on true while the user is placing points
+     * Switches picking mode on or off: a crosshair cursor and a hint while it is on.
+     * @param (boolean) on True while the user is placing points.
      */
     void setPicking(boolean on)
     {
@@ -358,7 +439,7 @@ final class VolumeView3D extends JComponent
         renderer.shutdown();
     }
 
-    /** Something changed: a coarse frame now, a sharp one when it stops. */
+    /** Asks for a coarse frame now and a sharp one when the movement stops. */
     private void moving()
     {
         coarse = true;
@@ -366,7 +447,9 @@ final class VolumeView3D extends JComponent
         requestFrame();
     }
 
-    // ------------------------------------------------------------------ frames
+    // ==========================================
+    //                   FRAMES
+    // ==========================================
 
     /**
      * Asks the frame thread for a frame of the current state; a request still waiting is replaced,
@@ -383,7 +466,7 @@ final class VolumeView3D extends JComponent
         int h = Math.max(1, getHeight());
         if (!fitted || w != fittedWidth || h != fittedHeight)
         {
-            camera.fit(geometry.worldDiagonal() * 0.85, w, h);
+            camera.fit(geometry.worldDiagonal() * FIT_DIAGONAL, w, h);
             fitted = true;
             fittedWidth = w;
             fittedHeight = h;
@@ -412,6 +495,7 @@ final class VolumeView3D extends JComponent
         }
         frames.execute(new Runnable()
         {
+            /** Draws the waiting frames, on the frame thread. */
             @Override
             public void run()
             {
@@ -421,10 +505,12 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @param (int) w width
-     * @param (int) h height
-     * @param (boolean) moving true while something moves
-     * @return pixels per ray along each side
+     * Chooses how many pixels one ray covers: more while something moves, and more for very large
+     * views.
+     * @param (int) w Width.
+     * @param (int) h Height.
+     * @param (boolean) moving True while something moves.
+     * @return (int) Pixels per ray along each side.
      */
     private static int scaleFor(int w, int h, boolean moving)
     {
@@ -444,12 +530,15 @@ final class VolumeView3D extends JComponent
         return 1;
     }
 
-    /** Frame thread: draws requests until none is waiting; each finished frame replaces the shown one. */
+    /**
+     * Draws the requests on the frame thread until none is waiting; each frame replaces the one
+     * shown.
+     */
     private void drawPending()
     {
         while (true)
         {
-            Job job;
+            Job    job;
             Raster target;
             synchronized (lock)
             {
@@ -489,11 +578,10 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * Frame thread: the object, then the box and the plane's outline (hidden behind the object
-     * where they pass).
-     *
-     * @param (Raster) r buffer of the job's size
-     * @param (Job) job what to draw
+     * Draws one frame, on the frame thread: the object, then the box and the plane's outline
+     * (hidden behind the object where they pass).
+     * @param (Raster) r Buffer of the job's size.
+     * @param (Job) job What to draw.
      */
     private void draw(Raster r, Job job)
     {
@@ -506,14 +594,20 @@ final class VolumeView3D extends JComponent
         drawPlaneOutline(r, job);
     }
 
-    // ------------------------------------------------------------------ painting
+    // ==========================================
+    //                  PAINTING
+    // ==========================================
 
+    /**
+     * Shows the newest finished frame, the plane's points and the axes on it, and the hint line.
+     * @param (Graphics) g0 Graphics of the view.
+     */
     @Override
     protected void paintComponent(Graphics g0)
     {
         Graphics2D g = (Graphics2D) g0;
-        int w = getWidth();
-        int h = getHeight();
+        int        w = getWidth();
+        int        h = getHeight();
         g.setColor(Theme.WELL);
         g.fillRect(0, 0, w, h);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -557,17 +651,16 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * The 12 edges of the volume's bounding box, hidden behind the object where they pass.
-     *
-     * @param (Raster) r buffer
-     * @param (Job) job the frame
+     * Draws the 12 edges of the volume's bounding box, hidden behind the object where they pass.
+     * @param (Raster) r Buffer.
+     * @param (Job) job The frame.
      */
     private static void drawBox(Raster r, Job job)
     {
-        double sx = job.volume.sizeX() - 1;
-        double sy = job.volume.sizeY() - 1;
-        double sz = job.volume.sizeZ() - 1;
-        Raster.Vertex[] c = new Raster.Vertex[8];
+        double          sx = job.volume.sizeX() - 1;
+        double          sy = job.volume.sizeY() - 1;
+        double          sz = job.volume.sizeZ() - 1;
+        Raster.Vertex[] c  = new Raster.Vertex[8];
         for (int i = 0; i < 8; i++)
         {
             double x = 0;
@@ -595,10 +688,9 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * The triangle / trapezoid: bright where visible, dim where the object hides it.
-     *
-     * @param (Raster) r buffer
-     * @param (Job) job the frame
+     * Draws the triangle / trapezoid: bright where visible, dim where the object hides it.
+     * @param (Raster) r Buffer.
+     * @param (Job) job The frame.
      */
     private static void drawPlaneOutline(Raster r, Job job)
     {
@@ -607,10 +699,10 @@ final class VolumeView3D extends JComponent
         {
             return;
         }
-        Raster.Vertex a1 = job.camera.project(job.geometry.toWorld(p.a1()), job.width, job.height, 0, 0);
-        Raster.Vertex a2 = job.camera.project(job.geometry.toWorld(p.a2()), job.width, job.height, 0, 0);
-        Raster.Vertex b = job.camera.project(job.geometry.toWorld(p.b()), job.width, job.height, 0, 0);
-        Raster.Vertex c = job.camera.project(job.geometry.toWorld(p.c()), job.width, job.height, 0, 0);
+        Raster.Vertex     a1    = job.camera.project(job.geometry.toWorld(p.a1()), job.width, job.height, 0, 0);
+        Raster.Vertex     a2    = job.camera.project(job.geometry.toWorld(p.a2()), job.width, job.height, 0, 0);
+        Raster.Vertex     b     = job.camera.project(job.geometry.toWorld(p.b()), job.width, job.height, 0, 0);
+        Raster.Vertex     c     = job.camera.project(job.geometry.toWorld(p.c()), job.width, job.height, 0, 0);
         Raster.Vertex[][] sides = {{a1, b}, {b, c}, {c, a2}, {a2, a1}};
         for (int i = 0; i < sides.length; i++)
         {
@@ -623,10 +715,9 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * The plane's points with their names, where the shown frame's camera puts them.
-     *
-     * @param (Graphics2D) g graphics
-     * @param (Job) job the shown frame
+     * Draws the plane's points with their names, where the shown frame's camera puts them.
+     * @param (Graphics2D) g Graphics.
+     * @param (Job) job The shown frame.
      */
     private void drawPoints(Graphics2D g, Job job)
     {
@@ -644,18 +735,18 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * Orientation arrows in the corner: L / P / S when the file says where they are, else x / y / z.
-     *
-     * @param (Graphics2D) g graphics
-     * @param (Job) job the shown frame (its camera)
-     * @param (int) h height
+     * Draws orientation arrows in the corner: L / P / S when the file says where they are, else x /
+     * y / z.
+     * @param (Graphics2D) g Graphics.
+     * @param (Job) job The shown frame (its camera).
+     * @param (int) h Height.
      */
     private static void drawAxes(Graphics2D g, Job job, int h)
     {
-        int ox = 46;
-        int oy = h - 56;
-        double len = 30;
-        Vec3[] axes = {new Vec3(1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, 0, 1)};
+        int      ox    = 46;
+        int      oy    = h - 56;
+        double   len   = 30;
+        Vec3[]   axes  = {new Vec3(1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, 0, 1)};
         String[] names = {"x", "y", "z"};
         if (job.geometry.known())
         {
@@ -681,11 +772,10 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * For tests: waits until no frame is being drawn or waiting.
-     *
-     * @param (long) timeoutMillis how long to wait at most
-     * @return true when idle in time
-     * @throws (InterruptedException) when interrupted
+     * Waits until no frame is being drawn or waiting (for tests).
+     * @param (long) timeoutMillis How long to wait at most.
+     * @return (boolean) True when idle in time.
+     * @throws (InterruptedException) When interrupted.
      */
     boolean awaitIdle(long timeoutMillis) throws InterruptedException
     {
@@ -705,7 +795,8 @@ final class VolumeView3D extends JComponent
     }
 
     /**
-     * @return whether a frame has been drawn and is shown
+     * Tells whether a frame is on show (for tests).
+     * @return (boolean) Whether a frame has been drawn and is shown.
      */
     boolean hasFrame()
     {

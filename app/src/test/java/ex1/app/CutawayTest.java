@@ -21,13 +21,12 @@ import org.junit.Test;
 public class CutawayTest
 {
     /**
-     * A hollow ball: a bright shell (radius 14..18) with a dark inside, in a 48^3 volume.
-     *
-     * @return the volume
+     * Makes a hollow ball: a bright shell (radius 14..18) with a dark inside, in a 48^3 volume.
+     * @return (Volume) The volume.
      */
     private static Volume hollowBall()
     {
-        int n = 48;
+        int    n = 48;
         Volume v = Volume.create(VoxelType.UINT8, n, n, n);
         double c = (n - 1) / 2.0;
         for (int z = 0; z < n; z++)
@@ -51,6 +50,11 @@ public class CutawayTest
         return v;
     }
 
+    /**
+     * Checks the three views of a scan with the lecturer's axes (x posterior, y inferior, z right,
+     * 1.3 mm): Axial keeps y, Coronal x, Sagittal z, each the right way round, with superior as
+     * world up (TC-87).
+     */
     @Test
     public void courseGeometryGivesTheLecturersViews()
     {
@@ -82,6 +86,10 @@ public class CutawayTest
         assertEquals(99.0, back.z, 1e-9);
     }
 
+    /**
+     * Checks that a volume without space directions is shown with its index axes as they are
+     * (TC-87).
+     */
     @Test
     public void unknownGeometryIsTheIdentity()
     {
@@ -92,12 +100,16 @@ public class CutawayTest
         assertEquals(1.0, g.spacing(1), 0.0);
     }
 
+    /**
+     * Checks that the solid model of a hollow ball (shell 200, inside 30) fills the dark inside and
+     * not the air around it, with Otsu's threshold between the two (TC-88).
+     */
     @Test
     public void solidFillsTheDarkInsideOfAClosedShell()
     {
-        Volume v = hollowBall();
+        Volume          v = hollowBall();
         IntensityWindow w = new IntensityWindow(0, 255);
-        SolidModel m = SolidModel.build(v, w);
+        SolidModel      m = SolidModel.build(v, w);
         assertEquals(1, m.factor);
         // The dark centre is inside the object (the air cannot reach it), the corner is outside.
         assertTrue(m.isSolid(24, 24, 24));
@@ -107,14 +119,19 @@ public class CutawayTest
         assertTrue(m.threshold() > 30 && m.threshold() < 200);
     }
 
+    /**
+     * Checks the rays on a hollow ball: a pick hits the surface where geometry says, a cut-open
+     * ball is hit exactly on the plane, a ray past the ball hits nothing, and the cut face shows
+     * the inside's grey, not the shell's (TC-89).
+     */
     @Test
     public void rayHitsTheSurfaceAndTheCutFaceWhereExpected()
     {
-        Volume v = hollowBall();
-        IntensityWindow w = new IntensityWindow(0, 255);
-        SolidModel m = SolidModel.build(v, w);
-        VolumeGeometry g = VolumeGeometry.of(v);
-        Camera3D cam = new Camera3D();
+        Volume          v   = hollowBall();
+        IntensityWindow w   = new IntensityWindow(0, 255);
+        SolidModel      m   = SolidModel.build(v, w);
+        VolumeGeometry  g   = VolumeGeometry.of(v);
+        Camera3D        cam = new Camera3D();
         cam.setAngles(0, 0);
         cam.fit(80, 100, 100);
         CutawayRenderer r = new CutawayRenderer(1);
@@ -139,16 +156,20 @@ public class CutawayTest
         r.shutdown();
     }
 
+    /**
+     * Checks Make isosceles: a clicked triangle keeps a and b and moves c along the ray from a; a
+     * clicked quadrilateral becomes a valid trapezoid (TC-90).
+     */
     @Test
     public void clickedTriangleIsMadeIsoscelesByMovingCOnly()
     {
         Plane clicked = Plane.triangle(new Vec3(10, 10, 5), new Vec3(0, 40, 5), new Vec3(30, 35, 5));
-        Plane fixed = PlaneSpec.makeIsosceles(clicked);
+        Plane fixed   = PlaneSpec.makeIsosceles(clicked);
         assertTrue(fixed.validate(Plane.DEFAULT_EPS).isEmpty());
         assertEquals(clicked.a1().x, fixed.a1().x, 0.0);
         assertEquals(clicked.b().y, fixed.b().y, 0.0);
         Vec3 dirBefore = clicked.c().sub(clicked.a1()).normalized();
-        Vec3 dirAfter = fixed.c().sub(fixed.a1()).normalized();
+        Vec3 dirAfter  = fixed.c().sub(fixed.a1()).normalized();
         assertEquals(1.0, dirBefore.dot(dirAfter), 1e-12);
         Plane trapezoid = Plane.trapezoid(new Vec3(0, 0, 0), new Vec3(12, 1, 0), new Vec3(-3, 20, 0), new Vec3(16, 21, 0));
         assertTrue(PlaneSpec.makeIsosceles(trapezoid).validate(Plane.DEFAULT_EPS).isEmpty());

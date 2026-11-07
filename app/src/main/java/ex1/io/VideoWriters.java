@@ -17,24 +17,34 @@ import java.util.concurrent.TimeUnit;
  */
 public final class VideoWriters
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
     /** System property naming the ffmpeg program; tests point it at a fake one. */
     public static final String FFMPEG_PROPERTY = "ex1.ffmpeg";
-    private static final long PROBE_TIMEOUT_MS = 15000;
-    private static final String H264_ENCODER = "libx264";
 
+    /** How long ffmpeg may take to list its encoders, and the H.264 encoder it must have. */
+    private static final long   PROBE_TIMEOUT_MS = 15000;
+    private static final String H264_ENCODER     = "libx264";
+
+    /** Whether ffmpeg can encode H.264 here; null until it was asked once. */
     private static Boolean ffmpegUsable;
 
+    /** Static methods only; never instantiated. */
     private VideoWriters()
     {
     }
 
     /**
-     * @param (File) file destination .mp4
-     * @param (int) width frame width (even)
-     * @param (int) height frame height (even)
-     * @param (int) fps frames per second
-     * @return an open writer
-     * @throws (IOException) if neither writer can create the file
+     * Opens an MP4 writer: ffmpeg when it can encode H.264 here, else the built-in encoder.
+     * @param (File) file Destination .mp4.
+     * @param (int) width Frame width (even).
+     * @param (int) height Frame height (even).
+     * @param (int) fps Frames per second.
+     * @return (VideoWriter) An open writer.
+     * @throws (IOException) If neither writer can create the file.
      */
     public static VideoWriter openMp4(File file, int width, int height, int fps) throws IOException
     {
@@ -53,14 +63,13 @@ public final class VideoWriters
     }
 
     /**
-     * The writer that needs no other program, for a second try when ffmpeg failed half-way.
-     *
-     * @param (File) file destination .mp4
-     * @param (int) width frame width (even)
-     * @param (int) height frame height (even)
-     * @param (int) fps frames per second
-     * @return an open built-in writer
-     * @throws (IOException) if the file cannot be created
+     * Opens the writer that needs no other program, for a second try when ffmpeg failed half-way.
+     * @param (File) file Destination .mp4.
+     * @param (int) width Frame width (even).
+     * @param (int) height Frame height (even).
+     * @param (int) fps Frames per second.
+     * @return (VideoWriter) An open built-in writer.
+     * @throws (IOException) If the file cannot be created.
      */
     public static VideoWriter openBuiltInMp4(File file, int width, int height, int fps) throws IOException
     {
@@ -68,8 +77,9 @@ public final class VideoWriters
     }
 
     /**
-     * @param (VideoWriter) w a writer from {@link #openMp4}
-     * @return true when it pipes into ffmpeg
+     * Tells whether a writer pipes into ffmpeg (so a failure can be retried with the built-in one).
+     * @param (VideoWriter) w A writer from {@link #openMp4}.
+     * @return (boolean) True when it pipes into ffmpeg.
      */
     public static boolean usesFfmpeg(VideoWriter w)
     {
@@ -77,7 +87,9 @@ public final class VideoWriters
     }
 
     /**
-     * @return the ffmpeg program to run: "ffmpeg" (found on the PATH) unless the property says otherwise
+     * Names the ffmpeg program to run.
+     * @return (String) The ffmpeg program to run: "ffmpeg" (found on the PATH) unless the property
+     *                  says otherwise.
      */
     static String ffmpegProgram()
     {
@@ -86,8 +98,7 @@ public final class VideoWriters
 
     /**
      * Asks ffmpeg once per run whether it can encode H.264.
-     *
-     * @return true when "ffmpeg -hide_banner -encoders" exits normally and lists libx264
+     * @return (boolean) True when "ffmpeg -hide_banner -encoders" exits normally and lists libx264.
      */
     static synchronized boolean ffmpegUsable()
     {
@@ -105,7 +116,9 @@ public final class VideoWriters
     }
 
     /**
-     * @return whether the ffmpeg program lists the H.264 encoder
+     * Asks ffmpeg once for its encoders, with a time limit and its output in a file, so a strange
+     * copy can neither hang nor flood the app.
+     * @return (boolean) Whether the ffmpeg program lists the H.264 encoder.
      */
     private static boolean probe()
     {

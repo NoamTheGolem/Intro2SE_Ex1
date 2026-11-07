@@ -23,27 +23,42 @@ import java.util.List;
  */
 public final class FrameRenderer
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Projections run once before the first timed frame, so the JIT compiles the loop first. */
     private static final int WARM_UP_PROJECTIONS = 5;
 
-    private final Volume volume;
-    private final List<Plane> planes;
+    /** What the video is made of. */
+    private final Volume          volume;
+    private final List<Plane>     planes;
     private final IntensityWindow window;
-    private final Projector projector;
-    private final int width;
-    private final int height;
+    private final Projector       projector;
+
+    /** One frame size for the whole video, and the buffers every frame reuses. */
+    private final int     width;
+    private final int     height;
     private final Image2D image;
-    private final byte[] frame;
-    private long lastNanos;
-    private boolean showFps;
+    private final byte[]  frame;
+
+    /** The last projection time, and whether the JIT warm-up has run. */
+    private long    lastNanos;
     private boolean warmedUp;
-    private final FpsMeter meter = new FpsMeter();
+
+    /** The FPS on the frames: on or off, its meter and its label. */
+    private boolean          showFps;
+    private final FpsMeter   meter   = new FpsMeter();
     private final FpsOverlay overlay = new FpsOverlay();
 
     /**
-     * @param (Volume) volume source volume
-     * @param (List) planes planes in order; null entries render as black frames
-     * @param (IntensityWindow) window grey mapping
-     * @param (Projector) projector sampling method
+     * Prepares the renderer: one frame size for the whole video (the largest plane, rounded up to
+     * even) and the buffers every frame reuses.
+     * @param (Volume) volume Source volume.
+     * @param (List<Plane>) planes Planes in order; null entries render as black frames.
+     * @param (IntensityWindow) window Grey mapping.
+     * @param (Projector) projector Sampling method.
      */
     public FrameRenderer(Volume volume, List<Plane> planes, IntensityWindow window, Projector projector)
     {
@@ -77,7 +92,8 @@ public final class FrameRenderer
     }
 
     /**
-     * @param (boolean) on true writes the projection's FPS on every projected frame
+     * Turns the FPS label on the frames on or off.
+     * @param (boolean) on True writes the projection's FPS on every projected frame.
      */
     public void setShowFps(boolean on)
     {
@@ -86,9 +102,8 @@ public final class FrameRenderer
 
     /**
      * Renders plane i. The returned array is reused by the next call.
-     *
-     * @param (int) i plane index
-     * @return width*height grey bytes, row-major
+     * @param (int) i Plane index.
+     * @return (byte[]) Width*height grey bytes, row-major.
      */
     public byte[] render(int i)
     {
@@ -136,7 +151,8 @@ public final class FrameRenderer
     }
 
     /**
-     * @return time of the last projection in nanoseconds (excludes grey mapping)
+     * Gives the time the last frame's projection took (0 for a black frame).
+     * @return (long) Time of the last projection in nanoseconds (excludes grey mapping).
      */
     public long lastProjectionNanos()
     {
@@ -144,7 +160,8 @@ public final class FrameRenderer
     }
 
     /**
-     * @return number of planes / frames
+     * Gives the number of frames of the video.
+     * @return (int) Number of planes / frames.
      */
     public int frameCount()
     {
@@ -152,7 +169,8 @@ public final class FrameRenderer
     }
 
     /**
-     * @return frame width (even)
+     * Gives the frame width.
+     * @return (int) Frame width (even).
      */
     public int width()
     {
@@ -160,7 +178,8 @@ public final class FrameRenderer
     }
 
     /**
-     * @return frame height (even)
+     * Gives the frame height.
+     * @return (int) Frame height (even).
      */
     public int height()
     {

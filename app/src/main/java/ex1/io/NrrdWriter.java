@@ -19,16 +19,22 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class NrrdWriter
 {
+    /** Static methods only; never instantiated. */
     private NrrdWriter()
     {
     }
 
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
+
     /**
-     * @param (Volume) volume volume to write
-     * @param (File) file destination .nrrd
-     * @param (boolean) gzip true for gzip encoding, false for raw
-     * @param (ByteOrder) order sample byte order
-     * @throws (IOException) on I/O errors
+     * Writes a volume as an attached NRRD file: the text header, then the samples, raw or gzip.
+     * @param (Volume) volume Volume to write.
+     * @param (File) file Destination .nrrd.
+     * @param (boolean) gzip True for gzip encoding, false for raw.
+     * @param (ByteOrder) order Sample byte order.
+     * @throws (IOException) On I/O errors.
      */
     public static void write(Volume volume, File file, boolean gzip, ByteOrder order) throws IOException
     {
@@ -49,9 +55,9 @@ public final class NrrdWriter
             {
                 data = new GZIPOutputStream(out);
             }
-            int bytes = volume.type().bytes();
-            ByteBuffer buf = ByteBuffer.allocate(bytes).order(order);
-            int n = volume.voxelCount();
+            int        bytes = volume.type().bytes();
+            ByteBuffer buf   = ByteBuffer.allocate(bytes).order(order);
+            int        n     = volume.voxelCount();
             for (int i = 0; i < n; i++)
             {
                 buf.clear();
@@ -69,10 +75,15 @@ public final class NrrdWriter
         }
     }
 
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
+
     /**
-     * @param (ByteBuffer) buf destination
-     * @param (VoxelType) type storage type
-     * @param (double) v value
+     * Writes one sample in the volume's storage type.
+     * @param (ByteBuffer) buf Destination.
+     * @param (VoxelType) type Storage type.
+     * @param (double) v Value.
      */
     private static void putValue(ByteBuffer buf, VoxelType type, double v)
     {
@@ -96,9 +107,14 @@ public final class NrrdWriter
         }
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (VoxelType) type storage type
-     * @return NRRD type name
+     * Gives the NRRD name of a storage type.
+     * @param (VoxelType) type Storage type.
+     * @return (String) NRRD type name.
      */
     private static String nrrdType(VoxelType type)
     {
@@ -122,8 +138,9 @@ public final class NrrdWriter
     }
 
     /**
-     * @param (ByteOrder) order byte order
-     * @return "little" or "big"
+     * Gives the NRRD name of a byte order.
+     * @param (ByteOrder) order Byte order.
+     * @return (String) "little" or "big".
      */
     private static String endianName(ByteOrder order)
     {
@@ -135,8 +152,9 @@ public final class NrrdWriter
     }
 
     /**
-     * @param (boolean) gzip encoding flag
-     * @return "gzip" or "raw"
+     * Gives the NRRD name of an encoding.
+     * @param (boolean) gzip Encoding flag.
+     * @return (String) "gzip" or "raw".
      */
     private static String encodingName(boolean gzip)
     {

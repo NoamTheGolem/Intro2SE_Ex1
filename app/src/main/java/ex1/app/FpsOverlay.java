@@ -18,28 +18,41 @@ import java.awt.image.BufferedImage;
  */
 final class FpsOverlay
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The label's size follows the frame's height, within limits that stay readable. */
     private static final double TEXT_PER_HEIGHT = 1.0 / 17;
-    private static final int MIN_TEXT = 9;
-    private static final int MAX_TEXT = 24;
+    private static final int    MIN_TEXT        = 9;    // pixels; a frame too small for this size gets no label
+    private static final int    MAX_TEXT        = 24;   // pixels
     /** The label may cover at most this share of the frame's width. */
     private static final double MAX_WIDTH_SHARE = 0.6;
-    private static final int LABEL_GREY = 18;
-    private static final int LABEL_ALPHA = 190;
-    private static final int TEXT_GREY = 242;
 
-    private String text;
-    private int size;
+    /** The pill: dark grey, a little see-through (alpha of 255), with light text. */
+    private static final int LABEL_GREY  = 18;
+    private static final int LABEL_ALPHA = 190;
+    private static final int TEXT_GREY   = 242;
+
+    /** The label drawn last, kept as an image until the text or the size changes. */
+    private String        text;
+    private int           size;
     private BufferedImage stamp;
-    private int[] stampPixels;
+    private int[]         stampPixels;
+
+    /** True when this Java cannot draw text (no fonts); the frames then get no label. */
     private boolean broken;
 
     /**
-     * @param (byte[]) frame width*height grey bytes, changed in place
-     * @param (int) width frame width
-     * @param (int) height frame height
-     * @param (String) label the text, e.g. "2,110 FPS"
-     * @return true when the label was drawn, false when the frame is too small (or this Java cannot
-     *         draw text at all, e.g. a server without fonts: the video is then written without it)
+     * Writes the label into the top-left corner of the frame.
+     * @param (byte[]) frame Width*height grey bytes, changed in place.
+     * @param (int) width Frame width.
+     * @param (int) height Frame height.
+     * @param (String) label The text, e.g. "2,110 FPS".
+     * @return (boolean) True when the label was drawn, false when the frame is too small (or this
+     *                   Java cannot draw text at all, e.g. a server without fonts: the video is
+     *                   then written without it).
      */
     boolean draw(byte[] frame, int width, int height, String label)
     {
@@ -78,24 +91,25 @@ final class FpsOverlay
     }
 
     /**
-     * @param (String) label the text
-     * @param (int) textSize font size in pixels
-     * @return the label as an image with transparency
+     * Draws the label once: a dark rounded pill with the text on it, transparent around it.
+     * @param (String) label The text.
+     * @param (int) textSize Font size in pixels.
+     * @return (BufferedImage) The label as an image with transparency.
      */
     private static BufferedImage makeStamp(String label, int textSize)
     {
-        Font font = Theme.semibold(textSize);
+        Font          font  = Theme.semibold(textSize);
         BufferedImage probe = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D pg = probe.createGraphics();
+        Graphics2D    pg    = probe.createGraphics();
         pg.setFont(font);
-        FontMetrics fm = pg.getFontMetrics();
-        int padX = Math.max(3, textSize / 2);
-        int padY = Math.max(2, textSize / 4);
-        int w = fm.stringWidth(label) + 2 * padX;
-        int h = fm.getAscent() + fm.getDescent() + 2 * padY;
+        FontMetrics fm   = pg.getFontMetrics();
+        int         padX = Math.max(3, textSize / 2);
+        int         padY = Math.max(2, textSize / 4);
+        int         w    = fm.stringWidth(label) + 2 * padX;
+        int         h    = fm.getAscent() + fm.getDescent() + 2 * padY;
         pg.dispose();
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
+        Graphics2D    g   = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
@@ -110,16 +124,15 @@ final class FpsOverlay
 
     /**
      * Mixes the label into the frame: frame = frame * (1 - a) + label * a, pixel by pixel.
-     *
-     * @param (byte[]) frame grey bytes
-     * @param (int) width frame width
-     * @param (int) x0 left of the label
-     * @param (int) y0 top of the label
+     * @param (byte[]) frame Grey bytes.
+     * @param (int) width Frame width.
+     * @param (int) x0 Left of the label.
+     * @param (int) y0 Top of the label.
      */
     private void blend(byte[] frame, int width, int x0, int y0)
     {
-        int w = stamp.getWidth();
-        int h = stamp.getHeight();
+        int   w    = stamp.getWidth();
+        int   h    = stamp.getHeight();
         int[] argb = stampPixels;
         for (int y = 0; y < h; y++)
         {
@@ -132,7 +145,7 @@ final class FpsOverlay
                 {
                     continue;
                 }
-                int v = (p >> 16) & 0xFF;
+                int v   = (p >> 16) & 0xFF;
                 int old = frame[row + x] & 0xFF;
                 frame[row + x] = (byte) ((old * (255 - a) + v * a + 127) / 255);
             }

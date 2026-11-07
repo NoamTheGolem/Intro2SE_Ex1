@@ -9,23 +9,32 @@ package ex1.core;
  */
 public abstract class Volume
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Sizes must stay below this (the assignment's 1 <= s < 2^10). */
     public static final int MAX_SIZE = 1024;
 
-    protected final int sx;
-    protected final int sy;
-    protected final int sz;
+    /** Size along each axis, and the storage type. */
+    protected final int     sx;
+    protected final int     sy;
+    protected final int     sz;
     private final VoxelType type;
 
     /** Name of the file's physical space (e.g. "left-posterior-superior"), or null. */
     private String space;
+
     /** Physical direction (with length = spacing) of one step along x, y, z; null when unknown. */
     private double[][] spaceDirections;
 
     /**
-     * @param (int) sx size along x
-     * @param (int) sy size along y
-     * @param (int) sz size along z
-     * @param (VoxelType) type storage type
+     * Checks the sizes against the assignment's limits and remembers them.
+     * @param (int) sx Size along x.
+     * @param (int) sy Size along y.
+     * @param (int) sz Size along z.
+     * @param (VoxelType) type Storage type.
      */
     protected Volume(int sx, int sy, int sz, VoxelType type)
     {
@@ -40,12 +49,11 @@ public abstract class Volume
 
     /**
      * Allocates an empty (all zero) volume of the matching subclass.
-     *
-     * @param (VoxelType) type storage type
-     * @param (int) sx size along x
-     * @param (int) sy size along y
-     * @param (int) sz size along z
-     * @return new volume
+     * @param (VoxelType) type Storage type.
+     * @param (int) sx Size along x.
+     * @param (int) sy Size along y.
+     * @param (int) sz Size along z.
+     * @return (Volume) New volume.
      */
     public static Volume create(VoxelType type, int sx, int sy, int sz)
     {
@@ -68,28 +76,27 @@ public abstract class Volume
     }
 
     /**
-     * Value of the voxel at a flat index, converted to float
+     * Reads the voxel at a flat index, converted to float
      * (unsigned types are read as unsigned).
-     *
-     * @param (int) index flat index, must be in [0, voxelCount())
-     * @return voxel value
+     * @param (int) index Flat index, must be in [0, voxelCount()).
+     * @return (float) Voxel value.
      */
     public abstract float valueAt(int index);
 
     /**
      * Stores a value at a flat index (used by generators and tests; readers fill the
      * typed arrays directly for speed).
-     *
-     * @param (int) index flat index
-     * @param (double) value value, truncated to the storage type
+     * @param (int) index Flat index.
+     * @param (double) value Value, truncated to the storage type.
      */
     public abstract void setValue(int index, double value);
 
     /**
-     * @param (int) x x index
-     * @param (int) y y index
-     * @param (int) z z index
-     * @return voxel value, or 0 when (x, y, z) is outside the volume
+     * Reads a voxel, 0 outside the volume ("if p is NOT in M, v = 0").
+     * @param (int) x X index.
+     * @param (int) y Y index.
+     * @param (int) z Z index.
+     * @return (float) Voxel value, or 0 when (x, y, z) is outside the volume.
      */
     public float get(int x, int y, int z)
     {
@@ -101,10 +108,11 @@ public abstract class Volume
     }
 
     /**
-     * @param (int) x x index
-     * @param (int) y y index
-     * @param (int) z z index
-     * @return flat index of (x, y, z)
+     * Computes the flat index of a voxel (x fastest).
+     * @param (int) x X index.
+     * @param (int) y Y index.
+     * @param (int) z Z index.
+     * @return (int) Flat index of (x, y, z).
      */
     public int index(int x, int y, int z)
     {
@@ -112,10 +120,11 @@ public abstract class Volume
     }
 
     /**
-     * @param (int) x x index
-     * @param (int) y y index
-     * @param (int) z z index
-     * @return true when the index lies inside the volume
+     * Tells whether an index lies inside the volume.
+     * @param (int) x X index.
+     * @param (int) y Y index.
+     * @param (int) z Z index.
+     * @return (boolean) True when the index lies inside the volume.
      */
     public boolean contains(int x, int y, int z)
     {
@@ -123,7 +132,8 @@ public abstract class Volume
     }
 
     /**
-     * @return size along x
+     * Gives the size along x.
+     * @return (int) Size along x.
      */
     public int sizeX()
     {
@@ -131,7 +141,8 @@ public abstract class Volume
     }
 
     /**
-     * @return size along y
+     * Gives the size along y.
+     * @return (int) Size along y.
      */
     public int sizeY()
     {
@@ -139,7 +150,8 @@ public abstract class Volume
     }
 
     /**
-     * @return size along z
+     * Gives the size along z.
+     * @return (int) Size along z.
      */
     public int sizeZ()
     {
@@ -147,7 +159,8 @@ public abstract class Volume
     }
 
     /**
-     * @return total number of voxels
+     * Counts the voxels.
+     * @return (int) Total number of voxels.
      */
     public int voxelCount()
     {
@@ -155,38 +168,34 @@ public abstract class Volume
     }
 
     /**
-     * @return storage type
+     * Gives the storage type.
+     * @return (VoxelType) Storage type.
      */
     public VoxelType type()
     {
         return type;
     }
 
+    /**
+     * Describes the volume, as the window title shows it.
+     * @return (String) "256x256x130 INT16".
+     */
     @Override
     public String toString()
     {
         return sx + "x" + sy + "x" + sz + " " + type;
     }
 
-    /**
-     * @param (int) s size to check
-     * @param (String) name axis name for the error message
-     */
-    private static void checkSize(int s, String name)
-    {
-        if (s < 1 || s >= MAX_SIZE)
-        {
-            throw new IllegalArgumentException(name + " must be in [1, " + MAX_SIZE + "), got " + s);
-        }
-    }
+    // ==========================================
+    //           GEOMETRY FROM THE FILE
+    // ==========================================
 
     /**
-     * Physical geometry from the file header (NRRD "space" and "space directions"). Only the
-     * viewer uses it (orientation labels, voxel aspect); the projection works in voxel indices,
+     * Keeps the physical geometry from the file header (NRRD "space" and "space directions"). Only
+     * the viewer uses it (orientation labels, voxel aspect); the projection works in voxel indices,
      * as the assignment defines it.
-     *
-     * @param (String) spaceName e.g. "left-posterior-superior", or null
-     * @param (double[][]) directions 3 vectors of 3 numbers (one per index axis), or null
+     * @param (String) spaceName e.g. "left-posterior-superior", or null.
+     * @param (double[][]) directions 3 vectors of 3 numbers (one per index axis), or null.
      */
     public void setSpace(String spaceName, double[][] directions)
     {
@@ -204,7 +213,8 @@ public abstract class Volume
     }
 
     /**
-     * @return the physical space name, or null when the file did not give one
+     * Gives the NRRD "space" the volume came with.
+     * @return (String) The physical space name, or null when the file did not give one.
      */
     public String space()
     {
@@ -212,7 +222,8 @@ public abstract class Volume
     }
 
     /**
-     * @return a copy of the per-axis physical step vectors, or null when unknown
+     * Gives the NRRD "space directions" the volume came with.
+     * @return (double[][]) A copy of the per-axis physical step vectors, or null when unknown.
      */
     public double[][] spaceDirections()
     {
@@ -226,5 +237,22 @@ public abstract class Volume
             System.arraycopy(spaceDirections[i], 0, copy[i], 0, 3);
         }
         return copy;
+    }
+
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
+    /**
+     * Checks one size against the assignment's limits, 1 <= s < 2^10.
+     * @param (int) s Size to check.
+     * @param (String) name Axis name for the error message.
+     */
+    private static void checkSize(int s, String name)
+    {
+        if (s < 1 || s >= MAX_SIZE)
+        {
+            throw new IllegalArgumentException(name + " must be in [1, " + MAX_SIZE + "), got " + s);
+        }
     }
 }

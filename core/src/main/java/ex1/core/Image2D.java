@@ -6,15 +6,20 @@ package ex1.core;
  */
 public final class Image2D
 {
-    private final int width;
-    private final int height;
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Size and samples (row-major). */
+    private final int     width;
+    private final int     height;
     private final float[] pixels;
 
     /**
      * Creates an image filled with 0.
-     *
-     * @param (int) width number of columns
-     * @param (int) height number of rows
+     * @param (int) width Number of columns.
+     * @param (int) height Number of rows.
      */
     public Image2D(int width, int height)
     {
@@ -28,9 +33,10 @@ public final class Image2D
     }
 
     /**
-     * @param (int) x column
-     * @param (int) y row
-     * @return pixel value
+     * Reads one pixel.
+     * @param (int) x Column.
+     * @param (int) y Row.
+     * @return (float) Pixel value.
      */
     public float get(int x, int y)
     {
@@ -38,7 +44,8 @@ public final class Image2D
     }
 
     /**
-     * @return number of columns
+     * Gives the width.
+     * @return (int) Number of columns.
      */
     public int width()
     {
@@ -46,7 +53,8 @@ public final class Image2D
     }
 
     /**
-     * @return number of rows
+     * Gives the height.
+     * @return (int) Number of rows.
      */
     public int height()
     {
@@ -54,7 +62,8 @@ public final class Image2D
     }
 
     /**
-     * @return backing array (row-major), shared, not copied
+     * Gives direct access to the pixels.
+     * @return (float[]) Backing array (row-major), shared, not copied.
      */
     public float[] pixels()
     {

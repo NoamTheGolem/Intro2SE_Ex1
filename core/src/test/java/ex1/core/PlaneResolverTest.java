@@ -14,8 +14,18 @@ import org.junit.Test;
  */
 public class PlaneResolverTest
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The assignment's EPS. */
     private static final double EPS = Plane.DEFAULT_EPS;
 
+    /**
+     * Checks that four points are read in the course order, (a1, b, a2, c): two rails, with no note
+     * (TC-10).
+     */
     @Test
     public void fourPointsAreTwoRailsInTheCourseOrder()
     {
@@ -30,6 +40,10 @@ public class PlaneResolverTest
         assertEquals(401, r.plane.imageWidth());
     }
 
+    /**
+     * Checks that row 4 of Ex0.csv is a valid trapezoid with no note: rails 502.49, top 300, base
+     * 400 (TC-11).
+     */
     @Test
     public void ex0Row4IsAValidTrapezoidWithoutAnyNote()
     {
@@ -42,6 +56,10 @@ public class PlaneResolverTest
         assertEquals(400.0, r.plane.b().dist(r.plane.c()), 1e-9);
     }
 
+    /**
+     * Checks that the lecturer's head slices come out the right way up: rows along y, columns along
+     * x (TC-16).
+     */
     @Test
     public void headSlicesComeOutTheRightWayUp()
     {
@@ -54,6 +72,10 @@ public class PlaneResolverTest
         assertEquals(255.0, r.plane.a2().x, 0.0);
     }
 
+    /**
+     * Checks that the Q&A order is used only when it alone gives a valid plane, with a note that
+     * says so (TC-15).
+     */
     @Test
     public void qaOrderIsUsedOnlyWhenItIsTheValidReading()
     {
@@ -66,6 +88,7 @@ public class PlaneResolverTest
         assertEquals(20.0, r.plane.a2().x, 0.0);
     }
 
+    /** Checks that a triangle is kept as given, doubtful but drawable, never reordered (TC-13). */
     @Test
     public void triangleIsNeverReordered()
     {
@@ -77,6 +100,7 @@ public class PlaneResolverTest
         assertTrue(r.plane.isRenderable());
     }
 
+    /** Checks that row 3 of Ex0.csv stays doubtful and drawable, not reordered (TC-12). */
     @Test
     public void ex0Row3StaysDoubtfulAndDrawable()
     {
@@ -87,6 +111,7 @@ public class PlaneResolverTest
         assertTrue(r.plane.isRenderable());
     }
 
+    /** Checks that sides that cross each other are bad in every reading (TC-14). */
     @Test
     public void crossingSidesAreBadInEveryReading()
     {

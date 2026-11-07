@@ -56,6 +56,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.ScrollPaneConstants;
+import javax.swing.Scrollable;
 import javax.swing.SwingUtilities;
 import javax.swing.JToggleButton;
 import javax.swing.SwingWorker;
@@ -65,15 +66,16 @@ import javax.swing.border.Border;
 
 /**
  * The application (the deliverable of Ex1): open a scan (NRRD) from anywhere on the computer or by
- * dropping it on the window, see it as a solid object, choose the plane by its 3 points (or 4 for
- * a trapezoid) - clicked on the views or typed - and see the object cut open along it (always: the
- * inside shows on the cut face) next to the plane's projection, the image of the assignment. One picture panel flips between that cut and the three standard views
- * of 3D Slicer (axial, coronal, sagittal), on which the points are clicked.
+ * dropping it on the window, see it as a solid object, choose the plane by its 3 points (or 4 for a
+ * trapezoid) - clicked on the views or typed - and see the object cut open along it (always: the
+ * inside shows on the cut face) next to the plane's projection, the image of the assignment. One
+ * picture panel flips between that cut and the three standard views of 3D Slicer (axial, coronal,
+ * sagittal), on which the points are clicked.
  *
- * The video is the chosen plane moved through the whole scan: Play shows it back and forth,
- * Export video saves one pass of it as an MP4. Lists of planes in CSV files (the lecturer's use
- * cases) are the command line's job: python Ex0.py scan.nrrd planes.csv out.mp4 (ADR-0012).
- * Sampling is nearest-neighbour, the course's M[p] (ADR-0011).
+ * The video is the chosen plane moved through the whole scan: Play shows it back and forth, Export
+ * video saves one pass of it as an MP4. Lists of planes in CSV files (the lecturer's use cases) are
+ * the command line's job: python Ex0.py scan.nrrd planes.csv out.mp4 (ADR-0012). Sampling is
+ * nearest-neighbour, the course's M[p] (ADR-0011).
  *
  * The FPS - how many cuts per second the projection computes - is measured on the frames of the
  * video while it plays, shown in the toolbar and on the picture, and written on every frame of an
@@ -82,111 +84,167 @@ import javax.swing.border.Border;
  */
 public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The window's title. */
     private static final String TITLE = "Ex1 - cut a 3-D scan with a plane";
+
+    /** Cores of this computer: the 3-D view traces its rays on all but one. */
     private static final int CORES = Runtime.getRuntime().availableProcessors();
+
     /** Play and export use one rate, so Play shows the video at its real speed: smooth motion. */
     static final int VIDEO_FPS = 30;
-    private static final String[] TRIANGLE_NAMES = {"a", "b", "c"};
+
+    /** Names of the points of a triangle and of a trapezoid. */
+    private static final String[] TRIANGLE_NAMES  = {"a", "b", "c"};
     private static final String[] TRAPEZOID_NAMES = {"a1", "a2", "b", "c"};
+
+    /** Width of the control column, in pixels. */
     private static final int CONTROL_WIDTH = 384;
+
     /** Width of the info texts of the control column (its padding is 18 on each side). */
     private static final int INFO_WIDTH = CONTROL_WIDTH - 46;
+
     /** Wrap width of HTML labels in CSS px: Swing draws one CSS px as 1.3 screen pixels. */
     private static final int HTML_WIDTH = (INFO_WIDTH - 12) * 10 / 13;
-    private static final int INFO_HEIGHT = 50;
+
+    /** Heights of the info texts and of the views' header strips. */
+    private static final int INFO_HEIGHT   = 50;
     private static final int HEADER_HEIGHT = 38;
-    private static final int VIEW_WIDTH = 560;
+
+    /** Size each view asks for at the start. */
+    private static final int VIEW_WIDTH  = 560;
     private static final int VIEW_HEIGHT = 480;
-    private static final String HINT_COLOUR = Theme.hex(Theme.TEXT_DIM);
-    private static final String ERROR_COLOUR = Theme.hex(Theme.ERROR);
+
+    /** Colours in the info texts: hints, errors, warnings, and the point being picked. */
+    private static final String HINT_COLOUR    = Theme.hex(Theme.TEXT_DIM);
+    private static final String ERROR_COLOUR   = Theme.hex(Theme.ERROR);
     private static final String WARNING_COLOUR = Theme.hex(Theme.WARNING);
-    private static final String PICK_COLOUR = Theme.hex(Theme.PLANE);
+    private static final String PICK_COLOUR    = Theme.hex(Theme.PLANE);
+
     /** The toolbar's FPS changes at most this often, so it can be read while playing. */
     private static final int FPS_LABEL_MS = 250;
+
+    /** What the toolbar's badge says before a scan is open, and before Play. */
     private static final String FPS_NO_SCAN = "FPS";
-    private static final String FPS_IDLE = "Play to measure FPS";
+    private static final String FPS_IDLE    = "Play to measure FPS";
+
     /** Projections run once before timing starts, so the first number is not the JIT warming up. */
     private static final int WARM_UP_PROJECTIONS = 5;
+
     /** Pictures of the picture panel: the cut, then the slice views 0..2 as pictures 1..3. */
     private static final int PICTURE_CUT = 0;
-    private static final int PICTURES = 4;
-    private static final int DEFAULT_WIDTH = 1500;
+    private static final int PICTURES    = 4;
+
+    /** Size of the window at the start. */
+    private static final int DEFAULT_WIDTH  = 1500;
     private static final int DEFAULT_HEIGHT = 900;
+
+    /** Names tried for a free video name: name_2 up to this. */
     private static final int MAX_NAME_TRIES = 999;
+
+    /** Longest end of ffmpeg's log that a message quotes. */
     private static final int MAX_NOTE_CHARS = 90;
 
-    // ---- model
-    private File volumeFile;
-    private Volume volume;
+    /** The scan that is open. */
+    private File            volumeFile;
+    private Volume          volume;
     private IntensityWindow window;
-    private VolumeGeometry geometry;
+    private VolumeGeometry  geometry;
+
     /** Nearest neighbour on the Swing thread: one frame takes about a millisecond. */
     private final Projector projector = Projector.create(Projector.Interpolation.NEAREST);
+
+    /** The plane: as edited (its spec), and as the points the views and the video use. */
     private PlaneSpec spec;
-    private Plane plane;
+    private Plane     plane;
+
+    /** Playing: the planes of the video, the frame on show, and the direction (+1 or -1). */
     private List<Plane> playSequence;
-    private int playIndex;
-    private int playStep = 1;
+    private int         playIndex;
+    private int         playStep = 1;
+
+    /** True while a scan loads or a video is exported. */
     private boolean busy;
+
+    /** Counts the models asked for, so a model built for an older scan is dropped. */
     private int modelGeneration;
+
+    /** The projection FPS while playing, and when the toolbar last showed it. */
     private final FpsMeter fps = new FpsMeter();
-    private long fpsShownAt;
+    private long           fpsShownAt;
+
     /** The cut's buffers, reused while the plane keeps its size (every frame of the video). */
     private Image2D cutImage;
-    private byte[] cutGrey;
+    private byte[]  cutGrey;
 
-    // ---- picking
+    /**
+     * Picking: the names, the points so far, the one being placed, the one row asked for (-1: all).
+     */
     private String[] pickNames;
-    private Vec3[] picked;
-    private int pickIndex = -1;
-    private int pickOnly = -1;
+    private Vec3[]   picked;
+    private int      pickIndex = -1;
+    private int      pickOnly  = -1;
+
     /** Picking switched the picture panel from the cut to a slice view; it switches back after. */
     private boolean pickMovedPicture;
 
-    // ---- views
+    /** The window. */
     private final JFrame frame = new JFrame(TITLE);
+
     /** One core is left to the window: the picture, its projection and the mouse. */
     private final VolumeView3D view3d = new VolumeView3D(this, Math.max(1, CORES - 1));
-    private final SliceView cutView = new SliceView();
-    private final OrthoView.Panel[] orthos = new OrthoView.Panel[3];
-    private final CardLayout pictures = new CardLayout();
-    private final JPanel pictureCards = new JPanel(pictures);
-    private final JPanel pictureBar = new JPanel(new BorderLayout(6, 0));
-    private final JLabel pictureTitle = new JLabel(" ", JLabel.CENTER);
-    private final JLabel pictureCount = new JLabel(" ");
-    private int picture = PICTURE_CUT;
-    private final JLabel status = new JLabel(" ");
+
+    /** The cut, and the three slice views. */
+    private final SliceView         cutView = new SliceView();
+    private final OrthoView.Panel[] orthos  = new OrthoView.Panel[3];
+
+    /** The picture panel: its cards, its bar with title and count, and the picture on show. */
+    private final CardLayout pictures     = new CardLayout();
+    private final JPanel     pictureCards = new JPanel(pictures);
+    private final JPanel     pictureBar   = new JPanel(new BorderLayout(6, 0));
+    private final JLabel     pictureTitle = new JLabel(" ", JLabel.CENTER);
+    private final JLabel     pictureCount = new JLabel(" ");
+    private int              picture      = PICTURE_CUT;
+
+    /** The status line, the export's progress, and the toolbar's FPS. */
+    private final JLabel       status   = new JLabel(" ");
     private final JProgressBar progress = new JProgressBar();
-    private final Badge fpsBadge = new Badge();
+    private final Badge        fpsBadge = new Badge();
 
-    // ---- points editor
-    private final JToggleButton threePoints = new JToggleButton("3 points (triangle)", true);
-    private final JToggleButton fourPoints = new JToggleButton("4 points (trapezoid)");
-    private final JLabel[] rowNames = new JLabel[4];
-    private final JTextField[][] fields = new JTextField[4][3];
-    private final JButton[] pickButtons = new JButton[4];
-    private final JLabel pointsInfo = new JLabel(" ");
-    private final JButton pickAll = new JButton("Pick on the views");
-    private final JButton fixButton = new JButton("Make isosceles");
+    /** Step 1, the points: the 3 / 4 switch, a row per point, and the line for problems. */
+    private final JToggleButton  threePoints = new JToggleButton("3 points (triangle)", true);
+    private final JToggleButton  fourPoints  = new JToggleButton("4 points (trapezoid)");
+    private final JLabel[]       rowNames    = new JLabel[4];
+    private final JTextField[][] fields      = new JTextField[4][3];
+    private final JButton[]      pickButtons = new JButton[4];
+    private final JLabel         pointsInfo  = new JLabel(" ");
+    private final JButton        pickAll     = new JButton("Pick on the views");
+    private final JButton        fixButton   = new JButton("Make isosceles");
 
-    // ---- the video
-    private final JLabel videoInfo = new JLabel(" ");
-    private final JButton playButton = new JButton("Play", Icons.play(false));
+    /** Step 2, the video: its line, Play and Export, and the timer that plays it. */
+    private final JLabel  videoInfo    = new JLabel(" ");
+    private final JButton playButton   = new JButton("Play", Icons.play(false));
     private final JButton exportButton = new JButton("Export video...");
-    private final Timer playTimer;
+    private final Timer   playTimer;
 
-    // ===================================================================== ENTRY
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
 
     /**
      * Opens the window on the Swing thread.
-     *
-     * @param (File) initialVolume NRRD to open at start, or null
+     * @param (File) initialVolume NRRD to open at start, or null.
      */
     public static void launch(final File initialVolume)
     {
         Theme.prepare();
         SwingUtilities.invokeLater(new Runnable()
         {
+            /** Installs the look, opens the window and the scan given on the command line. */
             @Override
             public void run()
             {
@@ -213,6 +271,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     {
         playTimer = new Timer(1000 / VIDEO_FPS, new ActionListener()
         {
+            /**
+             * Shows the next frame of the video.
+             * @param (ActionEvent) e The timer's tick.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -222,7 +284,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         buildWindow();
     }
 
-    // ============================================================ BUILD PIPELINE
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
 
     /** Lays out the toolbar, the 3-D view, the picture panel and the control column. */
     private void buildWindow()
@@ -290,7 +354,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the toolbar: the app's mark, Open, the drop hint and the FPS
+     * Builds the toolbar.
+     * @return (JPanel) The toolbar: the app's mark, Open, the drop hint and the FPS.
      */
     private JPanel buildToolbar()
     {
@@ -305,6 +370,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         left.add(Box.createHorizontalStrut(24));
         JButton open = button("Open NRRD...", new ActionListener()
         {
+            /**
+             * Opens a scan chosen in the system's file dialog.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -333,7 +402,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the 3-D view under its header
+     * Builds the left half of the views: the 3-D view under its header strip.
+     * @return (JPanel) The 3-D view under its header.
      */
     private JPanel buildModelPanel()
     {
@@ -355,10 +425,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * The picture panel: one picture at a time - the cut (the triangle), then Axial, Coronal and
-     * Sagittal - and arrows to flip through them; after the last one it comes back to the cut.
-     *
-     * @return the panel
+     * Builds the picture panel: one picture at a time - the cut (the triangle), then Axial, Coronal
+     * and Sagittal - and arrows to flip through them; after the last one it comes back to the cut.
+     * @return (JPanel) The panel.
      */
     private JPanel buildPicturePanel()
     {
@@ -370,6 +439,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         JButton previous = arrowButton(false, "Previous picture");
         previous.addActionListener(new ActionListener()
         {
+            /**
+             * Shows the previous picture.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -379,6 +452,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         JButton next = arrowButton(true, "Next picture");
         next.addActionListener(new ActionListener()
         {
+            /**
+             * Shows the next picture.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -408,7 +485,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return the "plane by points" editor: step 1 of the control column
+     * Builds step 1 of the control column: the 3 / 4 points switch, the point rows (x, y, z, Pick),
+     * Pick all, Make isosceles and the line for problems.
+     * @return (JPanel) The "plane by points" editor: step 1 of the control column.
      */
     private JPanel buildPointsPanel()
     {
@@ -432,6 +511,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         shape.add(fourPoints);
         ActionListener onShape = new ActionListener()
         {
+            /**
+             * Turns the plane into a triangle or a trapezoid, as the switch now says.
+             * @param (ActionEvent) e The click on either half of the switch.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -467,6 +550,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         ActionListener apply = new ActionListener()
         {
+            /**
+             * Takes the typed points as the new plane.
+             * @param (ActionEvent) e Enter in one of the fields.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -499,6 +586,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             pickButtons[r].setToolTipText("Click this point on the 3-D model or on a slice view");
             pickButtons[r].addActionListener(new ActionListener()
             {
+                /**
+                 * Waits for a click that places this row's point.
+                 * @param (ActionEvent) e The click.
+                 */
                 @Override
                 public void actionPerformed(ActionEvent e)
                 {
@@ -513,6 +604,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         pickAll.setToolTipText("Click the points one after the other on the 3-D model or the slice views");
         pickAll.addActionListener(new ActionListener()
         {
+            /**
+             * Starts picking all the points one after the other, or stops picking.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -530,6 +625,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         fixButton.setVisible(false);
         fixButton.addActionListener(new ActionListener()
         {
+            /**
+             * Replaces a doubtful plane by the nearest isosceles one.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -562,10 +661,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * The video: Play shows it, Export saves it. It is the chosen plane moved through the whole
-     * scan, so it is ready as soon as a scan is open - nothing is collected by hand.
-     *
-     * @return the video panel: step 2 of the control column
+     * Builds step 2, the video: Play shows it, Export saves it. It is the chosen plane moved
+     * through the whole scan, so it is ready as soon as a scan is open - nothing is collected by
+     * hand.
+     * @return (JPanel) The video panel: step 2 of the control column.
      */
     private JPanel buildVideoPanel()
     {
@@ -591,6 +690,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         playButton.setToolTipText("Plays the video in the views, back and forth, at " + VIDEO_FPS + " frames per second");
         playButton.addActionListener(new ActionListener()
         {
+            /**
+             * Starts or stops the video.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -600,6 +703,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         exportButton.setToolTipText("Saves the video (one pass, first frame to last) as an MP4 file");
         exportButton.addActionListener(new ActionListener()
         {
+            /**
+             * Saves the video as an MP4 file.
+             * @param (ActionEvent) e The click.
+             */
             @Override
             public void actionPerformed(ActionEvent e)
             {
@@ -625,9 +732,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (int) step its number in the order of work
-     * @param (String) title what the section is about
-     * @return a section title: the number in an amber ring, then the title
+     * Makes the title of a numbered section of the control column.
+     * @param (int) step Its number in the order of work.
+     * @param (String) title What the section is about.
+     * @return (JLabel) A section title: the number in an amber ring, then the title.
      */
     private static JLabel sectionTitle(int step, String title)
     {
@@ -639,8 +747,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (String) text one short line under a section title
-     * @return the line, dim
+     * Makes the dim line under a section title.
+     * @param (String) text One short line under a section title.
+     * @return (JLabel) The line, dim.
      */
     private static JLabel caption(String text)
     {
@@ -651,7 +760,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return a thin line between the sections of the control column
+     * Makes the line between the two sections of the control column.
+     * @return (JComponent) A thin line between the sections of the control column.
      */
     private static JComponent divider()
     {
@@ -667,22 +777,24 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Color) accent colour of the line on top: which picture it is (the plane's amber for
-     *        the cut, the view's colour for a slice view)
-     * @return the border of a view's header strip
+     * Makes the border of a view's header strip: a coloured line on top, a thin line under it.
+     * @param (Color) accent Colour of the line on top: which picture it is (the plane's amber for
+     *                       the cut, the view's colour for a slice view).
+     * @return (Border) The border of a view's header strip.
      */
     private static Border headerBorder(Color accent)
     {
-        Border top = BorderFactory.createMatteBorder(2, 0, 0, 0, accent);
+        Border top    = BorderFactory.createMatteBorder(2, 0, 0, 0, accent);
         Border bottom = BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.LINE);
-        Border pad = BorderFactory.createEmptyBorder(0, 12, 0, 6);
+        Border pad    = BorderFactory.createEmptyBorder(0, 12, 0, 6);
         return BorderFactory.createCompoundBorder(top, BorderFactory.createCompoundBorder(bottom, pad));
     }
 
     /**
-     * @param (boolean) right true for "next"
-     * @param (String) tip tooltip
-     * @return a flat button with a drawn arrow
+     * Makes a previous / next button for the picture panel.
+     * @param (boolean) right True for "next".
+     * @param (String) tip Tooltip.
+     * @return (JButton) A flat button with a drawn arrow.
      */
     private static JButton arrowButton(boolean right, String tip)
     {
@@ -694,10 +806,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         return b;
     }
 
-    // ------------------------------------------------------------------ the picture panel
+    // ==========================================
+    //             THE PICTURE PANEL
+    // ==========================================
 
     /**
-     * @param (int) delta +1 next picture, -1 previous; both wrap around
+     * Flips the picture panel to the next or previous picture.
+     * @param (int) delta +1 next picture, -1 previous; both wrap around.
      */
     private void flipPicture(int delta)
     {
@@ -706,14 +821,15 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (int) which PICTURE_CUT, or 1..3 for the Axial, Coronal and Sagittal views
+     * Shows one picture of the picture panel, with its title and the colour of its view.
+     * @param (int) which PICTURE_CUT, or 1..3 for the Axial, Coronal and Sagittal views.
      */
     private void showPicture(int which)
     {
         picture = which;
         pictures.show(pictureCards, Integer.toString(which));
-        Color accent = Theme.PLANE;
-        String title = "The cut, one frame of the video";
+        Color  accent = Theme.PLANE;
+        String title  = "The cut, one frame of the video";
         if (which != PICTURE_CUT)
         {
             int view = which - 1;
@@ -725,7 +841,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         pictureCount.setText((which + 1) + " of " + PICTURES);
     }
 
-    // ------------------------------------------------------------------ volume
+    // ==========================================
+    //                   VOLUME
+    // ==========================================
 
     /**
      * Asks for a scan with the system's own file dialog (on Windows the Explorer one: Desktop,
@@ -742,6 +860,12 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         dialog.setFilenameFilter(new FilenameFilter()
         {
+            /**
+             * Lets the dialog show only scans.
+             * @param (File) dir Folder of the file.
+             * @param (String) name File name.
+             * @return (boolean) True for a .nrrd or .nhdr file.
+             */
             @Override
             public boolean accept(File dir, String name)
             {
@@ -759,8 +883,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Loads a volume in the background, shows it, then builds the 3-D model.
-     *
-     * @param (File) file NRRD file
+     * @param (File) file NRRD file.
      */
     void openVolume(final File file)
     {
@@ -773,6 +896,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         setBusy(true, "Loading " + file.getName() + " ...");
         SwingWorker<Object[], Void> worker = new SwingWorker<Object[], Void>()
         {
+            /**
+             * Reads the scan and finds its grey window, off the Swing thread.
+             * @return (Object[]) The volume and its window.
+             * @throws (Exception) When the file cannot be read.
+             */
             @Override
             protected Object[] doInBackground() throws Exception
             {
@@ -782,6 +910,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 return new Object[] {v, w};
             }
 
+            /**
+             * Shows the loaded scan in every view with the start triangle and starts building its
+             * 3-D model, or explains why it did not load.
+             */
             @Override
             protected void done()
             {
@@ -829,19 +961,25 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     /** Builds the solid model in the background (its surface is found automatically). */
     private void buildModel()
     {
-        final Volume v = volume;
-        final IntensityWindow w = window;
-        final int generation = ++modelGeneration;
+        modelGeneration++;
+        final Volume          v          = volume;
+        final IntensityWindow w          = window;
+        final int             generation = modelGeneration;
         view3d.setModel(null);
         status.setText("Building the 3-D model ...");
         SwingWorker<SolidModel, Void> worker = new SwingWorker<SolidModel, Void>()
         {
+            /**
+             * Builds the solid model, off the Swing thread.
+             * @return (SolidModel) The model.
+             */
             @Override
             protected SolidModel doInBackground()
             {
                 return SolidModel.build(v, w);
             }
 
+            /** Shows the model, unless another scan was opened while it was being built. */
             @Override
             protected void done()
             {
@@ -870,8 +1008,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     /**
      * Projects a plane a few times, untimed, so the FPS measured on the first frames of the video
      * is the algorithm's speed and not the Java compiler warming up.
-     *
-     * @param (Plane) p a plane of the new volume
+     * @param (Plane) p A plane of the new volume.
      */
     private void warmUp(Plane p)
     {
@@ -885,12 +1022,13 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
-    // ------------------------------------------------------------------ plane editing
+    // ==========================================
+    //               PLANE EDITING
+    // ==========================================
 
     /**
      * Sets the current plane from a spec and updates everything.
-     *
-     * @param (PlaneSpec) s new spec
+     * @param (PlaneSpec) s New spec.
      */
     private void applySpec(PlaneSpec s)
     {
@@ -901,8 +1039,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Shows an arbitrary plane (typed or clicked points, a frame of the video): drawn as it is.
-     *
-     * @param (Plane) p plane
+     * @param (Plane) p Plane.
      */
     private void applyPlane(Plane p)
     {
@@ -913,8 +1050,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Switches between 3 and 4 points, keeping the plane's place and size.
-     *
-     * @param (boolean) four true for 4 points (trapezoid)
+     * @param (boolean) four True for 4 points (trapezoid).
      */
     private void changeShape(boolean four)
     {
@@ -937,6 +1073,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         showPointRows();
     }
 
+    /**
+     * Moves the plane along its normal (the wheel over the 3-D view).
+     * @param (double) distance Voxels to move, signed.
+     */
     @Override
     public void slidePlane(double distance)
     {
@@ -962,7 +1102,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             fourPoints.setSelected(!plane.isTriangle());
             showPointRows();
         }
-        List<Vec3> pts = planePoints(plane);
+        List<Vec3>   pts   = planePoints(plane);
         List<String> names = pointNames(plane);
         addPickedPoints(pts, names);
         for (int v = 0; v < 3; v++)
@@ -1008,7 +1148,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return "frame i of n   " while playing, else ""
+     * Starts the caption under the cut with the frame number while the video plays.
+     * @return (String) "frame i of n   " while playing, else "".
      */
     private String framePrefix()
     {
@@ -1021,8 +1162,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Shows a warning only when there is something to fix; a valid plane needs no numbers.
-     *
-     * @param (List) problems rule violations of the current plane
+     * @param (List<String>) problems Rule violations of the current plane.
      */
     private void showPointsInfo(List<String> problems)
     {
@@ -1040,11 +1180,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * While the video plays, a frame's projection time joins the FPS (ADR-0014): shown on the
+     * Adds a frame's projection time to the FPS while the video plays (ADR-0014): shown on the
      * picture every frame, as in the exported video, and in the toolbar a few times a second, so
      * it can be read. A still picture is not measured: there is no frame rate to speak of.
-     *
-     * @param (long) nanos projection time of the frame just shown
+     * @param (long) nanos Projection time of the frame just shown.
      */
     private void noteProjectionTime(long nanos)
     {
@@ -1063,7 +1202,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
-    /** Nothing plays: the toolbar says how to measure the FPS, the picture shows none. */
+    /**
+     * Shows that nothing plays: the toolbar says how to measure the FPS, the picture shows none.
+     */
     private void showFpsIdle()
     {
         if (volume == null)
@@ -1077,7 +1218,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         cutView.setFps(null);
     }
 
-    // ------------------------------------------------------------------ points editor
+    // ==========================================
+    //               POINTS EDITOR
+    // ==========================================
 
     /** Shows 3 or 4 rows of point fields. */
     private void showPointRows()
@@ -1144,8 +1287,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Vec3[]) p points in editor order (a, b, c or a1, a2, b, c)
-     * @return the plane
+     * Turns the points as the editor lists them into a plane.
+     * @param (Vec3[]) p Points in editor order (a, b, c or a1, a2, b, c).
+     * @return (Plane) The plane.
      */
     private static Plane planeOf(Vec3[] p)
     {
@@ -1157,8 +1301,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (int) r row
-     * @return the typed point, or null when a field is not a number
+     * Reads the three fields of one point.
+     * @param (int) r Row.
+     * @return (Vec3) The typed point, or null when a field is not a number.
      */
     private Vec3 readRow(int r)
     {
@@ -1184,8 +1329,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     /**
      * Starts placing points with the mouse. The cut cannot be clicked on, so when it is the
      * picture on show, the picture panel turns to the Axial view (and back afterwards).
-     *
-     * @param (int) only row to pick alone, or -1 for all points in order
+     * @param (int) only Row to pick alone, or -1 for all points in order.
      */
     private void startPicking(int only)
     {
@@ -1237,7 +1381,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (boolean) on picking mode for all views
+     * Switches picking mode on or off in the 3-D view and the three slice views.
+     * @param (boolean) on Picking mode for all views.
      */
     private void setPickingViews(boolean on)
     {
@@ -1256,9 +1401,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * A point was clicked while picking.
-     *
-     * @param (Vec3) p voxel-index point
+     * Places the point clicked while picking, then asks for the next one; after the last one the
+     * points become the plane (made isosceles when the clicks were not exact).
+     * @param (Vec3) p Voxel-index point.
      */
     private void pointPicked(Vec3 p)
     {
@@ -1281,7 +1426,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
         Vec3[] pts = picked;
         stopPicking();
-        Plane p0 = planeOf(pts);
+        Plane  p0  = planeOf(pts);
         String bad = p0.whyNotRenderable();
         if (bad != null)
         {
@@ -1299,8 +1444,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Plane) clicked the plane as clicked
-     * @return what was changed to make it isosceles, in words
+     * Says, without numbers, what making the clicked plane isosceles changed.
+     * @param (Plane) clicked The plane as clicked.
+     * @return (String) What was changed to make it isosceles, in words.
      */
     private static String fixMessage(Plane clicked)
     {
@@ -1313,9 +1459,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Adds the points clicked so far (while picking) to the markers.
-     *
-     * @param (List) pts markers
-     * @param (List) names labels
+     * @param (List<Vec3>) pts Markers.
+     * @param (List<String>) names Labels.
      */
     private void addPickedPoints(List<Vec3> pts, List<String> names)
     {
@@ -1335,6 +1480,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
+    /**
+     * Places the point being picked, or else moves the slice views through the clicked point.
+     * @param (Vec3) index The clicked point in voxel indices.
+     */
     @Override
     public void modelClicked(Vec3 index)
     {
@@ -1346,6 +1495,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         navigateTo(index);
     }
 
+    /**
+     * Places the point being picked, or else moves the other slice views through the clicked point.
+     * @param (int) view The slice view clicked.
+     * @param (Vec3) index The clicked point in voxel indices.
+     */
     @Override
     public void orthoClicked(int view, Vec3 index)
     {
@@ -1357,6 +1511,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         navigateTo(index);
     }
 
+    /**
+     * Tells every slice view where the other two are, for their crosshair lines.
+     * @param (int) view The view that moved.
+     */
     @Override
     public void sliceChanged(int view)
     {
@@ -1374,8 +1532,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Moves the three slice views through a point (Slicer's crosshair).
-     *
-     * @param (Vec3) p voxel-index point
+     * @param (Vec3) p Voxel-index point.
      */
     private void navigateTo(Vec3 p)
     {
@@ -1389,14 +1546,15 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         status.setText(String.format(Locale.ROOT, "Point (%.1f, %.1f, %.1f): the slice views now go through it", p.x, p.y, p.z));
     }
 
-    // ------------------------------------------------------------------ the video: play and export
+    // ==========================================
+    //         THE VIDEO: PLAY AND EXPORT
+    // ==========================================
 
     /**
-     * The video, frame by frame: the current plane swept through the scan, each frame rounded to
-     * the precision a CSV row would keep (so the command line, given these planes, makes the same
-     * frames); a plane the algorithm cannot draw becomes null, a black frame.
-     *
-     * @return the planes in order and the frame of the current plane
+     * Plans the video, frame by frame: the current plane swept through the scan, each frame rounded
+     * to the precision a CSV row would keep (so the command line, given these planes, makes the
+     * same frames); a plane the algorithm cannot draw becomes null, a black frame.
+     * @return (Sweep.Pass) The planes in order and the frame of the current plane.
      */
     private Sweep.Pass videoPass()
     {
@@ -1405,8 +1563,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (List) source planes of a video (null = black frame)
-     * @return the same planes rounded to the CSV precision; one the algorithm cannot draw is null
+     * Prepares the planes of a video as frames.
+     * @param (List<Plane>) source Planes of a video (null = black frame).
+     * @return (List<Plane>) The same planes rounded to the CSV precision; one the algorithm cannot
+     *                       draw is null.
      */
     static List<Plane> videoFrames(List<Plane> source)
     {
@@ -1467,8 +1627,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * One tick: shows the current frame, then steps to the next one, turning around at either end,
-     * so the video runs back and forth (... n-1, n, n-1, ... 2, 1, 2 ...) until Stop.
+     * Plays one tick: shows the current frame, then steps to the next one, turning around at either
+     * end, so the video runs back and forth (... n-1, n, n-1, ... 2, 1, 2 ...) until Stop.
      */
     private void stepPlayback()
     {
@@ -1513,7 +1673,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         stopPicking();
         final List<Plane> planes = videoPass().planes;
         // One thread, as while playing: the FPS written on the frames is the same measure.
-        final Projector exportProjector = Projector.create(Projector.Interpolation.NEAREST);
+        final Projector     exportProjector = Projector.create(Projector.Interpolation.NEAREST);
         final FrameRenderer renderer;
         try
         {
@@ -1539,9 +1699,16 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         progress.setVisible(true);
         SwingWorker<String, Integer> worker = new SwingWorker<String, Integer>()
         {
+            /** Projection times of the frames projected (not the black ones), and their count. */
             private final long[] frameNanos = new long[renderer.frameCount()];
-            private int projected;
+            private int          projected;
 
+            /**
+             * Writes the video, off the Swing thread; when ffmpeg fails, the built-in encoder
+             * writes it again.
+             * @return (String) A note for the summary: empty, or why the built-in encoder was used.
+             * @throws (Exception) When the video cannot be written at all.
+             */
             @Override
             protected String doInBackground() throws Exception
             {
@@ -1564,8 +1731,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
             }
 
             /**
-             * @param (VideoWriter) out an open writer; closed at the end, also on failure
-             * @throws (IOException) when a frame cannot be written
+             * Renders and writes every frame, and records each projection's time for the summary.
+             * @param (VideoWriter) out An open writer; closed at the end, also on failure.
+             * @throws (IOException) When a frame cannot be written.
              */
             private void writeAll(VideoWriter out) throws IOException
             {
@@ -1589,12 +1757,20 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 }
             }
 
+            /**
+             * Moves the progress bar.
+             * @param (List<Integer>) chunks Frames written so far; the last one counts.
+             */
             @Override
             protected void process(List<Integer> chunks)
             {
                 progress.setValue(chunks.get(chunks.size() - 1).intValue());
             }
 
+            /**
+             * Ends the export: the summary with the run's FPS and an offer to open the video, or
+             * the reason it failed (a half-written file is deleted).
+             */
             @Override
             protected void done()
             {
@@ -1603,7 +1779,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 setBusy(false, " ");
                 try
                 {
-                    String note = get();
+                    String note  = get();
                     String speed = "";
                     if (projected > 0)
                     {
@@ -1642,9 +1818,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
      * Asks where to save the video, with the system's own file dialog. The name proposed is not
      * taken yet; a file chosen anyway is checked first: on Windows a video open in a player cannot
      * be replaced. (The system dialog itself asks before replacing a file.)
-     *
-     * @param (int) frames number of frames, for the dialog title
-     * @return the file, or null when cancelled
+     * @param (int) frames Number of frames, for the dialog title.
+     * @return (File) The file, or null when cancelled.
      */
     private File chooseVideoFile(int frames)
     {
@@ -1676,10 +1851,11 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) folder where the file goes
-     * @param (String) base name without extension
-     * @param (String) ext extension with dot
-     * @return base.ext, or base_2.ext, base_3.ext ... - the first that does not exist yet
+     * Proposes a file name that is not taken yet, so an export never replaces an earlier video.
+     * @param (File) folder Where the file goes.
+     * @param (String) base Name without extension.
+     * @param (String) ext Extension with dot.
+     * @return (File) base.ext, or base_2.ext, base_3.ext ... - the first that does not exist yet.
      */
     static File freeName(File folder, String base, String ext)
     {
@@ -1692,8 +1868,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) f an existing file
-     * @return whether it can be opened for writing (not locked by another program, not read-only)
+     * Checks whether an existing file can be replaced: on Windows a video open in a player cannot.
+     * @param (File) f An existing file.
+     * @return (boolean) Whether it can be opened for writing (not locked by another program, not
+     *                   read-only).
      */
     private static boolean canReplace(File f)
     {
@@ -1724,13 +1902,14 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) target the video that was being written
-     * @param (Throwable) t what went wrong
-     * @return what happened in plain words, then the technical message (for a screenshot)
+     * Explains a failed export in plain words, with the technical detail below for a screenshot.
+     * @param (File) target The video that was being written.
+     * @param (Throwable) t What went wrong.
+     * @return (String) What happened in plain words, then the technical message (for a screenshot).
      */
     static String exportProblem(File target, Throwable t)
     {
-        String text = message(t).toLowerCase(Locale.ROOT);
+        String text   = message(t).toLowerCase(Locale.ROOT);
         String advice = "Try again, or save it in another folder (for example Videos or Downloads).";
         if (text.contains("access is denied") || text.contains("permission denied") || text.contains("read-only"))
         {
@@ -1772,13 +1951,14 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (String) text a message, maybe long and over several lines
-     * @return its last line, at most about one dialog line long
+     * Shortens a long message (ffmpeg's log) to its last line.
+     * @param (String) text A message, maybe long and over several lines.
+     * @return (String) Its last line, at most about one dialog line long.
      */
     private static String shortText(String text)
     {
         String[] lines = text.trim().split("\\R");
-        String last = lines[lines.length - 1].trim();
+        String   last  = lines[lines.length - 1].trim();
         if (last.length() > MAX_NOTE_CHARS)
         {
             last = "..." + last.substring(last.length() - MAX_NOTE_CHARS);
@@ -1787,8 +1967,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (int) frames number of frames
-     * @return the video's length in seconds, e.g. "13" or "1.6"
+     * Gives a video's length in seconds, as the dialogs show it.
+     * @param (int) frames Number of frames.
+     * @return (String) The video's length in seconds, e.g. "13" or "1.6".
      */
     private static String seconds(int frames)
     {
@@ -1801,7 +1982,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Projector) p a projector made for one export
+     * Stops the threads of a projector made for one export (a one-thread projector has none).
+     * @param (Projector) p A projector made for one export.
      */
     private static void shutdown(Projector p)
     {
@@ -1811,11 +1993,14 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (Plane) p plane
-     * @return its points in editor order: a, b, c or a1, a2, b, c
+     * Lists the plane's points in the order the editor shows them.
+     * @param (Plane) p Plane.
+     * @return (List<Vec3>) Its points in editor order: a, b, c or a1, a2, b, c.
      */
     private static List<Vec3> planePoints(Plane p)
     {
@@ -1831,13 +2016,14 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Plane) p plane
-     * @return the labels of its points in editor order
+     * Lists the names of the plane's points in the editor's order.
+     * @param (Plane) p Plane.
+     * @return (List<String>) The labels of its points in editor order.
      */
     private static List<String> pointNames(Plane p)
     {
         List<String> names = new ArrayList<String>();
-        String[] src = TRIANGLE_NAMES;
+        String[]     src   = TRIANGLE_NAMES;
         if (!p.isTriangle())
         {
             src = TRAPEZOID_NAMES;
@@ -1850,13 +2036,14 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (String) text message
-     * @param (String) colour CSS colour, or null for the default
-     * @return the message as wrapping HTML for the narrow info label
+     * Wraps a message in HTML so the info label breaks it into lines instead of growing wider.
+     * @param (String) text Message.
+     * @param (String) colour CSS colour, or null for the default.
+     * @return (String) The message as wrapping HTML for the narrow info label.
      */
     private static String html(String text, String colour)
     {
-        String safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        String safe  = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
         String style = "width:" + HTML_WIDTH + "px";
         if (colour != null)
         {
@@ -1866,8 +2053,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (double) v coordinate
-     * @return short text for a field
+     * Formats a coordinate for a field: two decimals, none for whole numbers.
+     * @param (double) v Coordinate.
+     * @return (String) Short text for a field.
      */
     private static String format(double v)
     {
@@ -1884,8 +2072,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (boolean) b busy flag
-     * @param (String) text status text
+     * Marks the app busy (loading, exporting) or free again: wait cursor, status text, controls.
+     * @param (boolean) b Busy flag.
+     * @param (String) text Status text.
      */
     private void setBusy(boolean b, String text)
     {
@@ -1920,9 +2109,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
 
     /**
      * Shows or hides a control and lays its panel out again (hiding alone leaves a gap).
-     *
-     * @param (Component) c the control
-     * @param (boolean) on visible or not
+     * @param (Component) c The control.
+     * @param (boolean) on Visible or not.
      */
     private static void show(Component c, boolean on)
     {
@@ -1938,7 +2126,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         }
     }
 
-    /** The status line in the normal state. */
+    /** Shows the status line of the normal state. */
     private void updateStatus()
     {
         if (volume == null || busy || pickIndex >= 0 || playTimer.isRunning())
@@ -1954,9 +2142,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (String) text label
-     * @param (ActionListener) action click handler
-     * @return the button
+     * Makes a button with its action.
+     * @param (String) text Label.
+     * @param (ActionListener) action Click handler.
+     * @return (JButton) The button.
      */
     private static JButton button(String text, ActionListener action)
     {
@@ -1966,8 +2155,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (JButton) b button
-     * @return the same button with narrow margins (the control column is narrow)
+     * Gives a button the compact padding of the control column.
+     * @param (JButton) b Button.
+     * @return (JButton) The same button with narrow margins (the control column is narrow).
      */
     private static JButton small(JButton b)
     {
@@ -1976,7 +2166,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return name of the volume file without extension
+     * Gives the scan's file name without its extension, for the proposed video name.
+     * @return (String) Name of the volume file without extension.
      */
     private String baseName()
     {
@@ -1988,9 +2179,10 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) f chosen file
-     * @param (String) ext extension with dot
-     * @return f with the extension appended when missing
+     * Adds the extension to a chosen file name when the user left it out.
+     * @param (File) f Chosen file.
+     * @param (String) ext Extension with dot.
+     * @return (File) The file, with the extension appended when it was missing.
      */
     private static File withExtension(File f, String ext)
     {
@@ -2002,7 +2194,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return where the open dialog starts: the current scan's folder, else Downloads, else home
+     * Chooses the folder the Open dialog starts in.
+     * @return (File) Where the open dialog starts: the current scan's folder, else Downloads, else
+     *                home.
      */
     private File openFolder()
     {
@@ -2010,7 +2204,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
         {
             return volumeFile.getAbsoluteFile().getParentFile();
         }
-        File home = new File(System.getProperty("user.home"));
+        File home      = new File(System.getProperty("user.home"));
         File downloads = new File(home, "Downloads");
         if (downloads.isDirectory())
         {
@@ -2020,7 +2214,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @return true on Windows (its file dialog filters by a pattern in the name box)
+     * Tells whether the app runs on Windows.
+     * @return (boolean) True on Windows (its file dialog filters by a pattern in the name box).
      */
     private static boolean onWindows()
     {
@@ -2028,7 +2223,8 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (File) f the saved video, to open with the system's default player
+     * Opens the saved video with the system's default player.
+     * @param (File) f The saved video, to open with the system's default player.
      */
     private void openInSystem(File f)
     {
@@ -2045,8 +2241,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (String) title dialog title
-     * @param (String) text message
+     * Shows an error dialog.
+     * @param (String) title Dialog title.
+     * @param (String) text Message.
      */
     private void error(String title, String text)
     {
@@ -2054,8 +2251,9 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /**
-     * @param (Throwable) t error
-     * @return readable message
+     * Gets a readable message from an error (its class name when it has none).
+     * @param (Throwable) t Error.
+     * @return (String) Readable message.
      */
     private static String message(Throwable t)
     {
@@ -2071,34 +2269,61 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     }
 
     /** The control column: as wide as the scroll pane, only scrolls vertically. */
-    private static final class ColumnPanel extends JPanel implements javax.swing.Scrollable
+    private static final class ColumnPanel extends JPanel implements Scrollable
     {
+        /** Version of the serialized form (Swing components are Serializable). */
         private static final long serialVersionUID = 1L;
 
+        /**
+         * Asks for room for the whole column.
+         * @return (Dimension) Its preferred size.
+         */
         @Override
         public Dimension getPreferredScrollableViewportSize()
         {
             return getPreferredSize();
         }
 
+        /**
+         * Gives the step the mouse wheel scrolls by.
+         * @param (Rectangle) visible The part shown.
+         * @param (int) orientation Always vertical here.
+         * @param (int) direction Up or down.
+         * @return (int) Pixels per step.
+         */
         @Override
-        public int getScrollableUnitIncrement(java.awt.Rectangle visible, int orientation, int direction)
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction)
         {
             return 16;
         }
 
+        /**
+         * Gives how far a click beside the thumb scrolls: one screenful.
+         * @param (Rectangle) visible The part shown.
+         * @param (int) orientation Always vertical here.
+         * @param (int) direction Up or down.
+         * @return (int) The height shown.
+         */
         @Override
-        public int getScrollableBlockIncrement(java.awt.Rectangle visible, int orientation, int direction)
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction)
         {
             return visible.height;
         }
 
+        /**
+         * Keeps the column exactly as wide as the scroll pane, so it never scrolls sideways.
+         * @return (boolean) True.
+         */
         @Override
         public boolean getScrollableTracksViewportWidth()
         {
             return true;
         }
 
+        /**
+         * Lets the column be taller than the scroll pane, so it scrolls up and down.
+         * @return (boolean) False.
+         */
         @Override
         public boolean getScrollableTracksViewportHeight()
         {
@@ -2109,14 +2334,26 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
     /** Accepts a .nrrd/.nhdr volume dragged from the file manager. */
     private final class FileDrop extends TransferHandler
     {
+        /** Version of the serialized form (Swing components are Serializable). */
         private static final long serialVersionUID = 1L;
 
+        /**
+         * Accepts files dragged in while the app is not busy.
+         * @param (TransferSupport) support The drag.
+         * @return (boolean) True when a list of files is offered and nothing else is running.
+         */
         @Override
         public boolean canImport(TransferSupport support)
         {
             return !busy && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
         }
 
+        /**
+         * Opens the dropped scan; a CSV file gets a note on the command line, anything else a
+         * message.
+         * @param (TransferSupport) support The drop.
+         * @return (boolean) True when a scan is being opened.
+         */
         @Override
         public boolean importData(TransferSupport support)
         {
@@ -2131,7 +2368,7 @@ public final class StudioApp implements VolumeView3D.Host, OrthoView.Host
                 {
                     return false;
                 }
-                File f = (File) files.get(0);
+                File   f    = (File) files.get(0);
                 String name = f.getName().toLowerCase(Locale.ROOT);
                 if (name.endsWith(".csv"))
                 {

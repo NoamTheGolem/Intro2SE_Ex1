@@ -10,15 +10,15 @@ import java.io.IOException;
 public interface VideoWriter extends AutoCloseable
 {
     /**
-     * @param (byte[]) grey width*height unsigned grey levels, row-major
-     * @throws (IOException) on write errors
+     * Writes the next frame.
+     * @param (byte[]) grey Width*height unsigned grey levels, row-major.
+     * @throws (IOException) On write errors.
      */
     void writeFrame(byte[] grey) throws IOException;
 
     /**
      * Finishes the output; must be called for the file to be valid.
-     *
-     * @throws (IOException) on write errors
+     * @throws (IOException) On write errors.
      */
     @Override
     void close() throws IOException;

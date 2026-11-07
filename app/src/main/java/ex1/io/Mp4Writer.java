@@ -19,42 +19,62 @@ import java.nio.charset.StandardCharsets;
  */
 public final class Mp4Writer implements VideoWriter
 {
-    private static final int MB = 16;
-    private static final int MB_CHROMA = 8;
-    private static final int I_PCM = 25;
-    private static final int NAL_SPS = 7;
-    private static final int NAL_PPS = 8;
-    private static final int NAL_IDR = 5;
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** H.264: macroblock sizes, the macroblock type and the NAL unit types used. */
+    private static final int MB        = 16;   // luma samples per side
+    private static final int MB_CHROMA = 8;    // chroma samples per side
+    private static final int I_PCM     = 25;   // raw samples, no prediction
+    private static final int NAL_SPS   = 7;
+    private static final int NAL_PPS   = 8;
+    private static final int NAL_IDR   = 5;
+
+    /** Baseline profile at level 5.1, the profile every player decodes. */
     private static final int PROFILE_BASELINE = 66;
     private static final int CONSTRAINT_FLAGS = 0xC0;
-    private static final int LEVEL = 51;
+    private static final int LEVEL            = 51;
+
+    /** Grey in video levels: chroma at neutral, luma from 16 (black) over 219 steps (white). */
     private static final int GREY_CHROMA = 128;
-    private static final int LUMA_BLACK = 16;
-    private static final int LUMA_RANGE = 219;
+    private static final int LUMA_BLACK  = 16;
+    private static final int LUMA_RANGE  = 219;
+
+    /** Largest IDR picture id; the ids go round. */
     private static final int MAX_IDR_ID = 65535;
+
+    /** Time units per second in the movie header. */
     private static final int MOVIE_TIMESCALE = 1000;
+
+    /** Largest size of a box with a 32-bit size field. */
     private static final long MAX_32 = 0xFFFFFFFFL;
 
+    /** The file and the video's format. */
     private final RandomAccessFile out;
-    private final int width;
-    private final int height;
-    private final int fps;
-    private final int mbCols;
-    private final int mbRows;
-    private final byte[] sps;
-    private final byte[] pps;
+    private final int              width;
+    private final int              height;
+    private final int              fps;
+    private final int              mbCols;
+    private final int              mbRows;
+
+    /** The parameter sets, the size of every frame (for the index), and where mdat starts. */
+    private final byte[]  sps;
+    private final byte[]  pps;
     private final IntList sampleSizes = new IntList();
-    private final long mdatStart;
+    private final long    mdatStart;
+
+    /** Grey level (0..255) to video luma (16..235). */
     private final byte[] lumaMap = new byte[256];
 
     /**
      * Opens the file and writes the header.
-     *
-     * @param (File) file destination .mp4
-     * @param (int) width frame width (even)
-     * @param (int) height frame height (even)
-     * @param (int) fps frames per second
-     * @throws (IOException) if the file cannot be written
+     * @param (File) file Destination .mp4.
+     * @param (int) width Frame width (even).
+     * @param (int) height Frame height (even).
+     * @param (int) fps Frames per second.
+     * @throws (IOException) If the file cannot be written.
      */
     public Mp4Writer(File file, int width, int height, int fps) throws IOException
     {
@@ -86,8 +106,16 @@ public final class Mp4Writer implements VideoWriter
         out.write(fourCc("mdat"));
     }
 
-    // ===================================================================== ENTRY
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
 
+    /**
+     * Encodes the frame as one picture and appends it to the file, remembering its size for the
+     * index.
+     * @param (byte[]) grey Width*height grey levels, row-major.
+     * @throws (IOException) When the file cannot be written.
+     */
     @Override
     public void writeFrame(byte[] grey) throws IOException
     {
@@ -101,12 +129,16 @@ public final class Mp4Writer implements VideoWriter
         sampleSizes.add(nal.length + 4);
     }
 
+    /**
+     * Finishes the file: the mdat box gets its size, then the moov index of every frame follows.
+     * @throws (IOException) When the file cannot be written or the video is over 4 GB.
+     */
     @Override
     public void close() throws IOException
     {
         try
         {
-            long mdatEnd = out.getFilePointer();
+            long mdatEnd  = out.getFilePointer();
             long mdatSize = mdatEnd - mdatStart;
             if (mdatSize > MAX_32)
             {
@@ -123,10 +155,14 @@ public final class Mp4Writer implements VideoWriter
         }
     }
 
-    // ============================================================ BUILD PIPELINE
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
 
     /**
-     * @return SPS NAL unit (with header, escaped)
+     * Builds the H.264 sequence parameter set: Baseline profile, the picture in whole 16 x 16
+     * macroblocks, cropped back to the exact width and height.
+     * @return (byte[]) SPS NAL unit (with header, escaped).
      */
     private byte[] buildSps()
     {
@@ -144,7 +180,7 @@ public final class Mp4Writer implements VideoWriter
         b.ue(mbRows - 1);
         b.bit(1);                 // frame_mbs_only_flag
         b.bit(1);                 // direct_8x8_inference_flag
-        int cropRight = (mbCols * MB - width) / 2;
+        int cropRight  = (mbCols * MB - width) / 2;
         int cropBottom = (mbRows * MB - height) / 2;
         if (cropRight > 0 || cropBottom > 0)
         {
@@ -164,7 +200,8 @@ public final class Mp4Writer implements VideoWriter
     }
 
     /**
-     * @return PPS NAL unit (with header, escaped)
+     * Builds the H.264 picture parameter set.
+     * @return (byte[]) PPS NAL unit (with header, escaped).
      */
     private static byte[] buildPps()
     {
@@ -190,12 +227,11 @@ public final class Mp4Writer implements VideoWriter
     }
 
     /**
-     * One frame = one IDR slice of I_PCM macroblocks. Pixels beyond the frame edge (padding
+     * Builds one frame as one IDR slice of I_PCM macroblocks. Pixels beyond the frame edge (padding
      * up to a multiple of 16) repeat the last row/column; the SPS crops them away.
-     *
-     * @param (byte[]) grey frame pixels
-     * @param (int) idrId idr_pic_id (consecutive IDRs must differ)
-     * @return raw NAL unit, not yet escaped
+     * @param (byte[]) grey Frame pixels.
+     * @param (int) idrId idr_pic_id (consecutive IDRs must differ).
+     * @return (byte[]) Raw NAL unit, not yet escaped.
      */
     private byte[] buildSlice(byte[] grey, int idrId)
     {
@@ -219,7 +255,7 @@ public final class Mp4Writer implements VideoWriter
                 b.alignZero();
                 for (int y = 0; y < MB; y++)
                 {
-                    int py = Math.min(my * MB + y, height - 1);
+                    int py  = Math.min(my * MB + y, height - 1);
                     int row = py * width;
                     for (int x = 0; x < MB; x++)
                     {
@@ -238,13 +274,15 @@ public final class Mp4Writer implements VideoWriter
     }
 
     /**
-     * @param (long) firstSampleOffset file offset of the first frame
-     * @return the moov box
-     * @throws (IOException) never (in-memory)
+     * Builds the moov box: the track header, the sample sizes and the offset of every frame in the
+     * file.
+     * @param (long) firstSampleOffset File offset of the first frame.
+     * @return (byte[]) The moov box.
+     * @throws (IOException) Never (in-memory).
      */
     private byte[] buildMoov(long firstSampleOffset) throws IOException
     {
-        int n = sampleSizes.size();
+        int  n             = sampleSizes.size();
         long movieDuration = (long) n * MOVIE_TIMESCALE / fps;
 
         Box mvhd = new Box("mvhd");
@@ -278,7 +316,7 @@ public final class Mp4Writer implements VideoWriter
         Box avc1 = new Box("avc1");
         avc1.zeros(6).u16(1).zeros(16).u16(width).u16(height);
         avc1.u32(0x00480000).u32(0x00480000).u32(0).u16(1);
-        byte[] name = new byte[32];
+        byte[] name  = new byte[32];
         byte[] label = "Ex1 I_PCM".getBytes(StandardCharsets.US_ASCII);
         name[0] = (byte) label.length;
         System.arraycopy(label, 0, name, 1, label.length);
@@ -313,7 +351,8 @@ public final class Mp4Writer implements VideoWriter
     }
 
     /**
-     * @throws (IOException) on write errors
+     * Writes the ftyp box that opens every MP4 file.
+     * @throws (IOException) On write errors.
      */
     private void writeFtyp() throws IOException
     {
@@ -323,19 +362,20 @@ public final class Mp4Writer implements VideoWriter
         out.write(ftyp.toBytes());
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
      * Inserts emulation-prevention bytes: 00 00 0x (x <= 3) becomes 00 00 03 0x, so the
      * payload can never imitate a start code.
-     *
-     * @param (byte[]) raw NAL unit
-     * @return escaped NAL unit
+     * @param (byte[]) raw NAL unit.
+     * @return (byte[]) Escaped NAL unit.
      */
     static byte[] escape(byte[] raw)
     {
-        ByteArrayOutputStream o = new ByteArrayOutputStream(raw.length + raw.length / 64 + 16);
-        int zeros = 0;
+        ByteArrayOutputStream o     = new ByteArrayOutputStream(raw.length + raw.length / 64 + 16);
+        int                   zeros = 0;
         for (int i = 0; i < raw.length; i++)
         {
             int v = raw[i] & 0xFF;
@@ -358,8 +398,9 @@ public final class Mp4Writer implements VideoWriter
     }
 
     /**
-     * @param (String) s four ASCII characters
-     * @return their bytes
+     * Turns a four-character code into its bytes.
+     * @param (String) s Four ASCII characters.
+     * @return (byte[]) Their bytes.
      */
     private static byte[] fourCc(String s)
     {
@@ -369,11 +410,13 @@ public final class Mp4Writer implements VideoWriter
     /** Growable int array (avoids boxing one Integer per frame). */
     private static final class IntList
     {
+        /** The values and how many there are. */
         private int[] data = new int[256];
-        private int size;
+        private int   size;
 
         /**
-         * @param (int) v value to append
+         * Appends a value, growing the array when it is full.
+         * @param (int) v Value to append.
          */
         void add(int v)
         {
@@ -388,8 +431,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (int) i index
-         * @return value
+         * Reads a value.
+         * @param (int) i Index.
+         * @return (int) Value.
          */
         int get(int i)
         {
@@ -397,7 +441,8 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @return number of values
+         * Counts the values.
+         * @return (int) Number of values.
          */
         int size()
         {
@@ -408,12 +453,14 @@ public final class Mp4Writer implements VideoWriter
     /** MSB-first bit writer with Exp-Golomb codes. */
     static final class BitWriter
     {
+        /** The bytes written, and the bits of the byte being filled. */
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream(1 << 16);
-        private int current;
-        private int count;
+        private int                         current;
+        private int                         count;
 
         /**
-         * @param (int) b 0 or 1
+         * Writes one bit.
+         * @param (int) b 0 or 1.
          */
         void bit(int b)
         {
@@ -428,8 +475,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (int) value value
-         * @param (int) n number of low bits to write, MSB first
+         * Writes the low n bits of a value, most significant first.
+         * @param (int) value Value.
+         * @param (int) n Number of low bits to write, MSB first.
          */
         void bits(int value, int n)
         {
@@ -440,22 +488,20 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * Unsigned Exp-Golomb.
-         *
-         * @param (int) v value >= 0
+         * Writes an unsigned Exp-Golomb code.
+         * @param (int) v Value >= 0.
          */
         void ue(int v)
         {
-            int x = v + 1;
+            int x   = v + 1;
             int len = 32 - Integer.numberOfLeadingZeros(x);
             bits(0, len - 1);
             bits(x, len);
         }
 
         /**
-         * Signed Exp-Golomb.
-         *
-         * @param (int) v value
+         * Writes a signed Exp-Golomb code.
+         * @param (int) v Value.
          */
         void se(int v)
         {
@@ -480,15 +526,14 @@ public final class Mp4Writer implements VideoWriter
 
         /**
          * Writes a whole byte; the writer must be byte-aligned (fast path for PCM samples).
-         *
-         * @param (byte) v byte
+         * @param (byte) v Byte.
          */
         void byteAligned(byte v)
         {
             bytes.write(v);
         }
 
-        /** rbsp_trailing_bits: a 1 then zeros to the byte boundary. */
+        /** Writes rbsp_trailing_bits: a 1, then zeros to the byte boundary. */
         void trailingBits()
         {
             bit(1);
@@ -496,7 +541,8 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @return written bytes (must be aligned)
+         * Gives the bytes written so far.
+         * @return (byte[]) Written bytes (must be aligned).
          */
         byte[] toBytes()
         {
@@ -507,11 +553,13 @@ public final class Mp4Writer implements VideoWriter
     /** ISO-BMFF box builder: size + type + payload + children. */
     private static final class Box
     {
-        private final String type;
+        /** The box type and what was appended to it. */
+        private final String                type;
         private final ByteArrayOutputStream body = new ByteArrayOutputStream();
 
         /**
-         * @param (String) type four-character box type
+         * Starts an empty box of a type.
+         * @param (String) type Four-character box type.
          */
         Box(String type)
         {
@@ -519,8 +567,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (int) v byte
-         * @return this
+         * Appends one byte.
+         * @param (int) v Byte.
+         * @return (Box) This.
          */
         Box u8(int v)
         {
@@ -529,8 +578,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (int) v 16-bit value
-         * @return this
+         * Appends a 16-bit big-endian value.
+         * @param (int) v 16-bit value.
+         * @return (Box) This.
          */
         Box u16(int v)
         {
@@ -540,8 +590,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (long) v 32-bit value
-         * @return this
+         * Appends a 32-bit big-endian value.
+         * @param (long) v 32-bit value.
+         * @return (Box) This.
          */
         Box u32(long v)
         {
@@ -553,8 +604,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (int) n number of zero bytes
-         * @return this
+         * Appends zero bytes.
+         * @param (int) n Number of zero bytes.
+         * @return (Box) This.
          */
         Box zeros(int n)
         {
@@ -566,8 +618,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (byte[]) b bytes
-         * @return this
+         * Appends bytes as they are.
+         * @param (byte[]) b Bytes.
+         * @return (Box) This.
          */
         Box raw(byte[] b)
         {
@@ -576,9 +629,8 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * Identity transformation matrix (fixed point 16.16 / 2.30).
-         *
-         * @return this
+         * Appends the identity transformation matrix (fixed point 16.16 / 2.30).
+         * @return (Box) This.
          */
         Box matrix()
         {
@@ -589,8 +641,9 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @param (Box) c child box
-         * @return this
+         * Appends a complete child box.
+         * @param (Box) c Child box.
+         * @return (Box) This.
          */
         Box child(Box c)
         {
@@ -598,13 +651,14 @@ public final class Mp4Writer implements VideoWriter
         }
 
         /**
-         * @return complete box bytes
+         * Finishes the box: its size and type, then everything appended to it.
+         * @return (byte[]) Complete box bytes.
          */
         byte[] toBytes()
         {
-            byte[] payload = body.toByteArray();
-            ByteArrayOutputStream o = new ByteArrayOutputStream(payload.length + 8);
-            int size = payload.length + 8;
+            byte[]                payload = body.toByteArray();
+            ByteArrayOutputStream o       = new ByteArrayOutputStream(payload.length + 8);
+            int                   size    = payload.length + 8;
             o.write(size >>> 24);
             o.write(size >>> 16);
             o.write(size >>> 8);

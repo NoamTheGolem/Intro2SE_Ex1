@@ -19,19 +19,27 @@ import javax.swing.plaf.basic.BasicScrollBarUI;
  */
 public final class FlatScrollBarUI extends BasicScrollBarUI
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Sizes, in pixels. */
     private static final int THICKNESS = 10;
     private static final int MIN_THUMB = 32;
-    private static final int INSET = 2;
+    private static final int INSET     = 2;   // between the thumb and the edge
 
     /**
-     * @param (JComponent) c the scroll bar
-     * @return a new UI
+     * Creates the look of one scroll bar (called by Swing).
+     * @param (JComponent) c The scroll bar.
+     * @return (ComponentUI) A new UI.
      */
     public static ComponentUI createUI(JComponent c)
     {
         return new FlatScrollBarUI();
     }
 
+    /** Takes the thumb and track colours from the theme. */
     @Override
     protected void configureScrollBarColors()
     {
@@ -40,18 +48,33 @@ public final class FlatScrollBarUI extends BasicScrollBarUI
         trackColor = Theme.SURFACE;
     }
 
+    /**
+     * Leaves out the arrow at the start.
+     * @param (int) orientation Vertical or horizontal.
+     * @return (JButton) A zero-size stand-in.
+     */
     @Override
     protected JButton createDecreaseButton(int orientation)
     {
         return noButton();
     }
 
+    /**
+     * Leaves out the arrow at the end.
+     * @param (int) orientation Vertical or horizontal.
+     * @return (JButton) A zero-size stand-in.
+     */
     @Override
     protected JButton createIncreaseButton(int orientation)
     {
         return noButton();
     }
 
+    /**
+     * Makes the bar thin.
+     * @param (JComponent) c The scroll bar.
+     * @return (Dimension) Its size.
+     */
     @Override
     public Dimension getPreferredSize(JComponent c)
     {
@@ -62,12 +85,22 @@ public final class FlatScrollBarUI extends BasicScrollBarUI
         return new Dimension(3 * MIN_THUMB, THICKNESS);
     }
 
+    /**
+     * Keeps the thumb big enough to grab, also on a long list.
+     * @return (Dimension) The smallest thumb.
+     */
     @Override
     protected Dimension getMinimumThumbSize()
     {
         return new Dimension(MIN_THUMB, MIN_THUMB);
     }
 
+    /**
+     * Paints the track as the panel behind it, so only the thumb shows.
+     * @param (Graphics) g Graphics of the bar.
+     * @param (JComponent) c The scroll bar.
+     * @param (Rectangle) r The track.
+     */
     @Override
     protected void paintTrack(Graphics g, JComponent c, Rectangle r)
     {
@@ -80,6 +113,12 @@ public final class FlatScrollBarUI extends BasicScrollBarUI
         g.fillRect(r.x, r.y, r.width, r.height);
     }
 
+    /**
+     * Paints the thumb as a rounded bar, lighter under the mouse and while dragged.
+     * @param (Graphics) g Graphics of the bar.
+     * @param (JComponent) c The scroll bar.
+     * @param (Rectangle) r The thumb.
+     */
     @Override
     protected void paintThumb(Graphics g, JComponent c, Rectangle r)
     {
@@ -101,11 +140,12 @@ public final class FlatScrollBarUI extends BasicScrollBarUI
     }
 
     /**
-     * @return an invisible stand-in for the arrow buttons
+     * Makes a zero-size button: Swing's scroll bar wants arrow buttons, this one shows none.
+     * @return (JButton) An invisible stand-in for the arrow buttons.
      */
     private static JButton noButton()
     {
-        JButton b = new JButton();
+        JButton   b    = new JButton();
         Dimension none = new Dimension(0, 0);
         b.setPreferredSize(none);
         b.setMinimumSize(none);

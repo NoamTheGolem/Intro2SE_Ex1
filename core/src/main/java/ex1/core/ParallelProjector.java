@@ -1,6 +1,7 @@
 package ex1.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -18,15 +19,23 @@ import java.util.concurrent.ThreadFactory;
  */
 public final class ParallelProjector extends Projector
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Fewer rows than this per thread and the plane is projected on the calling thread. */
     private static final int MIN_ROWS_PER_TASK = 8;
 
-    private final Projector inner;
-    private final int threads;
+    /** The projector that does the work, and the threads that run it. */
+    private final Projector       inner;
+    private final int             threads;
     private final ExecutorService pool;
 
     /**
-     * @param (Projector) inner the projector that does the sampling (nearest or trilinear)
-     * @param (int) threads number of worker threads (&gt;= 2)
+     * Creates the projector and its pool of daemon threads.
+     * @param (Projector) inner The projector that does the sampling (nearest or trilinear).
+     * @param (int) threads Number of worker threads (&gt;= 2).
      */
     public ParallelProjector(Projector inner, int threads)
     {
@@ -38,8 +47,14 @@ public final class ParallelProjector extends Projector
         this.threads = threads;
         this.pool = Executors.newFixedThreadPool(threads, new ThreadFactory()
         {
+            /** Threads made so far, to number their names. */
             private int count = 0;
 
+            /**
+             * Makes a numbered worker: a daemon, so the pool never keeps the program alive.
+             * @param (Runnable) r The thread's work.
+             * @return (Thread) The thread, not started yet.
+             */
             @Override
             public Thread newThread(Runnable r)
             {
@@ -51,6 +66,13 @@ public final class ParallelProjector extends Projector
         });
     }
 
+    /**
+     * Projects the plane with its rows split into blocks, one per thread; a small plane stays on
+     * the calling thread, where the hand-off would cost more than it saves.
+     * @param (Volume) volume Source volume.
+     * @param (Plane) plane The plane.
+     * @param (Image2D) image Receives the samples; at least the plane's image size.
+     */
     @Override
     public void project(final Volume volume, final Plane plane, final Image2D image)
     {
@@ -61,7 +83,7 @@ public final class ParallelProjector extends Projector
             throw new IllegalArgumentException("image " + image.width() + "x" + image.height()
                     + " is smaller than plane " + w + "x" + h);
         }
-        java.util.Arrays.fill(image.pixels(), 0f);
+        Arrays.fill(image.pixels(), 0f);
 
         int tasks = Math.min(threads, Math.max(1, h / MIN_ROWS_PER_TASK));
         if (tasks == 1)
@@ -70,18 +92,19 @@ public final class ParallelProjector extends Projector
             inner.projectRows(volume, plane, image, 0, h);
             return;
         }
-        List<Future<?>> futures = new ArrayList<Future<?>>();
-        int rowsPerTask = (h + tasks - 1) / tasks;
+        List<Future<?>> futures     = new ArrayList<Future<?>>();
+        int             rowsPerTask = (h + tasks - 1) / tasks;
         for (int t = 0; t < tasks; t++)
         {
             final int from = t * rowsPerTask;
-            final int to = Math.min(h, from + rowsPerTask);
+            final int to   = Math.min(h, from + rowsPerTask);
             if (from >= to)
             {
                 break;
             }
             futures.add(pool.submit(new Runnable()
             {
+                /** Projects this task's block of rows. */
                 @Override
                 public void run()
                 {
@@ -101,7 +124,8 @@ public final class ParallelProjector extends Projector
     }
 
     /**
-     * @return number of worker threads
+     * Gives the number of worker threads.
+     * @return (int) Number of worker threads.
      */
     public int threads()
     {
@@ -118,7 +142,8 @@ public final class ParallelProjector extends Projector
     }
 
     /**
-     * @param (List) futures tasks to wait for
+     * Waits for every block of rows; a failure in one is thrown again here.
+     * @param (List<Future<?>>) futures Tasks to wait for.
      */
     private static void waitAll(List<Future<?>> futures)
     {

@@ -10,6 +10,7 @@ import ex1.io.PngFrameWriter;
 import ex1.io.VideoWriter;
 import ex1.io.VideoWriters;
 
+import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,16 +25,26 @@ import java.util.Locale;
  */
 public final class Ex0
 {
-    private static final int EXIT_OK = 0;
-    private static final int EXIT_USAGE = 1;
-    private static final int EXIT_BAD_INPUT = 2;
-    private static final int EXIT_OUTPUT = 3;
 
-    private static final int DEFAULT_FPS = 10;
-    private static final int MAX_FPS = 120;
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** Exit codes: 0 done, 1 wrong usage, 2 bad input, 3 the video could not be written. */
+    private static final int EXIT_OK        = 0;
+    private static final int EXIT_USAGE     = 1;
+    private static final int EXIT_BAD_INPUT = 2;
+    private static final int EXIT_OUTPUT    = 3;
+
+    /** Limits and defaults of the options. */
+    private static final int DEFAULT_FPS = 10;   // frames per second of the video
+    private static final int MAX_FPS     = 120;
     private static final int MAX_THREADS = 256;
+
+    /** Nanoseconds per millisecond, for the timing line. */
     private static final double NANOS_PER_MS = 1e6;
 
+    /** Printed after an error of usage. */
     private static final String USAGE =
             "Usage: java -jar Ex0.jar <file.nrrd> <file.csv> <file.mp4> [options]\n"
             + "       java -jar Ex0.jar [file.nrrd]   (opens the app: choose 3 points, see the model cut open)\n"
@@ -49,27 +60,32 @@ public final class Ex0
     /** Parsed command-line options. */
     private static final class Options
     {
-        File nrrd;
-        File csv;
-        File mp4;
-        Projector.Interpolation interp = Projector.Interpolation.NEAREST;
-        int fps = DEFAULT_FPS;
-        double[] window;
-        File framesDir;
-        boolean strict;
-        int threads = 1;
-        boolean showFps = true;
+        /** The three files, then the options with their defaults (see USAGE). */
+        File                    nrrd;
+        File                    csv;
+        File                    mp4;
+        Projector.Interpolation interp  = Projector.Interpolation.NEAREST;
+        int                     fps     = DEFAULT_FPS;
+        double[]                window;
+        File                    framesDir;
+        boolean                 strict;
+        int                     threads = 1;
+        boolean                 showFps = true;
     }
 
     /** Thrown for problems that map to a specific exit code. */
     static final class ExitException extends Exception
     {
+        /** Version of the serialized form (exceptions are Serializable). */
         private static final long serialVersionUID = 1L;
+
+        /** The exit code the program ends with. */
         final int code;
 
         /**
-         * @param (int) code process exit code
-         * @param (String) message message for stderr
+         * Creates the exception with its exit code.
+         * @param (int) code Process exit code.
+         * @param (String) message Message for stderr.
          */
         ExitException(int code, String message)
         {
@@ -78,23 +94,26 @@ public final class Ex0
         }
     }
 
+    /** A program: main and its helpers only; never instantiated. */
     private Ex0()
     {
     }
 
-    // ===================================================================== ENTRY
+    // ==========================================
+    //                   ENTRY
+    // ==========================================
 
     /**
-     * No arguments or one file (a volume): open the app. Three files: the command-line demo of
-     * the assignment (volume, CSV of planes, output video) - CSV files are read only here.
-     *
-     * @param (String[]) args nrrd, csv, mp4, then options
+     * Program entry point: nothing, or one file (a volume), opens the app; three files run the
+     * command-line demo of the assignment (volume, CSV of planes, output video) - CSV files are
+     * read only here.
+     * @param (String[]) args The NRRD, CSV and MP4 files, then the options.
      */
     public static void main(String[] args)
     {
         if (opensTheApp(args))
         {
-            if (java.awt.GraphicsEnvironment.isHeadless())
+            if (GraphicsEnvironment.isHeadless())
             {
                 System.err.println("No display available for the window app.");
                 System.err.print(USAGE);
@@ -126,10 +145,9 @@ public final class Ex0
     }
 
     /**
-     * Whole pipeline; separate from main so tests can call it without System.exit.
-     *
-     * @param (String[]) args command-line arguments
-     * @throws (ExitException) on any failure, carrying the exit code
+     * Runs the whole pipeline; separate from main so tests can call it without System.exit.
+     * @param (String[]) args Command-line arguments.
+     * @throws (ExitException) On any failure, carrying the exit code.
      */
     static void run(String[] args) throws ExitException
     {
@@ -153,8 +171,10 @@ public final class Ex0
     }
 
     /**
-     * @param (String[]) args command-line arguments
-     * @return true when the arguments ask for the window app rather than the batch demo
+     * Decides between the window app and the batch demo: nothing, or one file (a scan), opens the
+     * app; anything more is the demo's command line.
+     * @param (String[]) args Command-line arguments.
+     * @return (boolean) True when the arguments ask for the window app rather than the batch demo.
      */
     private static boolean opensTheApp(String[] args)
     {
@@ -172,18 +192,21 @@ public final class Ex0
         return true;
     }
 
-    // ============================================================ BUILD PIPELINE
+    // ==========================================
+    //               BUILD PIPELINE
+    // ==========================================
 
     /**
-     * @param (String[]) args command-line arguments
-     * @return parsed options
-     * @throws (ExitException) EXIT_USAGE on bad arguments
+     * Reads the three files and the options.
+     * @param (String[]) args Command-line arguments.
+     * @return (Options) Parsed options.
+     * @throws (ExitException) EXIT_USAGE on bad arguments.
      */
     private static Options parseArgs(String[] args) throws ExitException
     {
         List<String> positional = new ArrayList<String>();
-        Options opt = new Options();
-        int i = 0;
+        Options      opt        = new Options();
+        int          i          = 0;
         while (i < args.length)
         {
             String a = args[i];
@@ -281,9 +304,10 @@ public final class Ex0
     }
 
     /**
-     * @param (File) file NRRD file
-     * @return loaded volume
-     * @throws (ExitException) EXIT_BAD_INPUT if it cannot be read
+     * Loads the NRRD volume, turning every problem into exit code 2 with a message.
+     * @param (File) file NRRD file.
+     * @return (Volume) Loaded volume.
+     * @throws (ExitException) EXIT_BAD_INPUT if it cannot be read.
      */
     private static Volume loadVolume(File file) throws ExitException
     {
@@ -310,11 +334,10 @@ public final class Ex0
      * Reads every CSV row (one row = one frame). Rows that break the plane rules are reported
      * as warnings and still projected; rows that cannot be projected become black frames
      * (decision D11). With --strict any warning stops the run instead.
-     *
-     * @param (File) file CSV file
-     * @param (boolean) strict true to treat warnings as errors
-     * @return planes in file order; null = black frame
-     * @throws (ExitException) EXIT_BAD_INPUT if the file is missing or has no usable plane
+     * @param (File) file CSV file.
+     * @param (boolean) strict True to treat warnings as errors.
+     * @return (List<Plane>) Planes in file order; null = black frame.
+     * @throws (ExitException) EXIT_BAD_INPUT if the file is missing or has no usable plane.
      */
     private static List<Plane> loadPlanes(File file, boolean strict) throws ExitException
     {
@@ -352,9 +375,10 @@ public final class Ex0
     }
 
     /**
-     * @param (Volume) volume loaded volume
-     * @param (Options) opt options (explicit --window wins)
-     * @return intensity window for the whole video (decision D7)
+     * Chooses the grey window: the one given with --window, else the volume's 0.5-99.5 percentiles.
+     * @param (Volume) volume Loaded volume.
+     * @param (Options) opt Options (explicit --window wins).
+     * @return (IntensityWindow) Intensity window for the whole video (decision D7).
      */
     private static IntensityWindow chooseWindow(Volume volume, Options opt)
     {
@@ -371,15 +395,14 @@ public final class Ex0
      * for the whole run. If ffmpeg fails half-way (a broken or blocked copy on this computer),
      * the same frames are written again with the built-in encoder, so the video is never lost
      * to another program.
-     *
-     * @param (FrameRenderer) renderer turns plane i into frame i
-     * @param (Options) opt options
-     * @throws (ExitException) EXIT_OUTPUT on write failures
+     * @param (FrameRenderer) renderer Turns plane i into frame i.
+     * @param (Options) opt Options.
+     * @throws (ExitException) EXIT_OUTPUT on write failures.
      */
     private static void renderVideo(FrameRenderer renderer, Options opt) throws ExitException
     {
-        int fw = renderer.width();
-        int fh = renderer.height();
+        int  fw = renderer.width();
+        int  fh = renderer.height();
         long projectNanos;
         try
         {
@@ -410,11 +433,12 @@ public final class Ex0
     }
 
     /**
-     * @param (FrameRenderer) renderer turns plane i into frame i
-     * @param (Options) opt options (--frames adds a PNG writer)
-     * @param (VideoWriter) mp4 the open MP4 writer; closed here, also on failure
-     * @return nanoseconds spent projecting
-     * @throws (IOException) when a frame cannot be written
+     * Renders every frame once and hands it to every writer (the MP4 and, with --frames, the PNGs).
+     * @param (FrameRenderer) renderer Turns plane i into frame i.
+     * @param (Options) opt Options (--frames adds a PNG writer).
+     * @param (VideoWriter) mp4 The open MP4 writer; closed here, also on failure.
+     * @return (long) Nanoseconds spent projecting.
+     * @throws (IOException) When a frame cannot be written.
      */
     private static long writeFrames(FrameRenderer renderer, Options opt, VideoWriter mp4) throws IOException
     {
@@ -446,13 +470,16 @@ public final class Ex0
         return projectNanos;
     }
 
-    // ========================================================= LOW-LEVEL HELPERS
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
 
     /**
-     * @param (String[]) args arguments
-     * @param (int) i index of an option that needs one value
-     * @return the value after it
-     * @throws (ExitException) EXIT_USAGE if missing
+     * Reads the value that follows an option.
+     * @param (String[]) args Arguments.
+     * @param (int) i Index of an option that needs one value.
+     * @return (String) The value after it.
+     * @throws (ExitException) EXIT_USAGE if missing.
      */
     private static String value(String[] args, int i) throws ExitException
     {
@@ -464,10 +491,11 @@ public final class Ex0
     }
 
     /**
-     * @param (String) s text
-     * @param (String) option option name for the message
-     * @return parsed number
-     * @throws (ExitException) EXIT_USAGE if not a number
+     * Parses an option's number.
+     * @param (String) s Text.
+     * @param (String) option Option name for the message.
+     * @return (double) Parsed number.
+     * @throws (ExitException) EXIT_USAGE if not a number.
      */
     private static double number(String s, String option) throws ExitException
     {
@@ -483,9 +511,8 @@ public final class Ex0
 
     /**
      * Closes all writers, reporting the first failure after trying every one.
-     *
-     * @param (List) writers writers to close
-     * @throws (IOException) first close failure
+     * @param (List<VideoWriter>) writers Writers to close.
+     * @throws (IOException) First close failure.
      */
     private static void closeAll(List<VideoWriter> writers) throws IOException
     {
@@ -511,7 +538,8 @@ public final class Ex0
     }
 
     /**
-     * @param (List) writers writers to close, ignoring errors (already failing)
+     * Closes the writers after a failure, keeping the first error as the one reported.
+     * @param (List<VideoWriter>) writers Writers to close, ignoring errors (already failing).
      */
     private static void closeQuietly(List<VideoWriter> writers)
     {

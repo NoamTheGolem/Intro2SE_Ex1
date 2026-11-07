@@ -7,6 +7,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
 
 import javax.swing.AbstractButton;
@@ -20,25 +21,37 @@ import javax.swing.plaf.UIResource;
  */
 public final class Icons
 {
-    public static final int INFORMATION = 0;
-    public static final int WARNING = 1;
-    public static final int ERROR = 2;
-    public static final int QUESTION = 3;
 
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** The kinds of dialog icon. */
+    public static final int INFORMATION = 0;
+    public static final int WARNING     = 1;
+    public static final int ERROR       = 2;
+    public static final int QUESTION    = 3;
+
+    /** Sizes of the icons, in pixels. */
     private static final int DIALOG_SIZE = 30;
-    private static final int ARROW_SIZE = 16;
-    private static final int PLAY_SIZE = 12;
-    private static final int MARK_SIZE = 20;
-    private static final int STEP_SIZE = 20;
+    private static final int ARROW_SIZE  = 16;
+    private static final int PLAY_SIZE   = 12;
+    private static final int MARK_SIZE   = 20;
+    private static final int STEP_SIZE   = 20;
 
     /** Factory methods only; never instantiated. */
     private Icons()
     {
     }
 
+    // ==========================================
+    //                 FACTORIES
+    // ==========================================
+
     /**
-     * @param (int) kind INFORMATION, WARNING, ERROR or QUESTION
-     * @return a round icon for a message dialog
+     * Makes the icon of a message dialog.
+     * @param (int) kind INFORMATION, WARNING, ERROR or QUESTION.
+     * @return (Icon) A round icon for a message dialog.
      */
     public static Icon dialog(int kind)
     {
@@ -46,8 +59,9 @@ public final class Icons
     }
 
     /**
-     * @param (boolean) right true points right
-     * @return a chevron for a "previous / next" button
+     * Makes a chevron.
+     * @param (boolean) right True points right.
+     * @return (Icon) A chevron for a "previous / next" button.
      */
     public static Icon arrow(boolean right)
     {
@@ -55,8 +69,9 @@ public final class Icons
     }
 
     /**
-     * @param (boolean) playing true draws "stop" (a square), false "play" (a triangle)
-     * @return the icon of the Play / Stop button
+     * Makes the Play / Stop icon.
+     * @param (boolean) playing True draws "stop" (a square), false "play" (a triangle).
+     * @return (Icon) The icon of the Play / Stop button.
      */
     public static Icon play(boolean playing)
     {
@@ -64,7 +79,8 @@ public final class Icons
     }
 
     /**
-     * @return the app's mark: an isosceles triangle, the plane of the assignment
+     * Makes the app's mark for the toolbar.
+     * @return (Icon) The app's mark: an isosceles triangle, the plane of the assignment.
      */
     public static Icon mark()
     {
@@ -72,17 +88,24 @@ public final class Icons
     }
 
     /**
-     * @param (int) number step number
-     * @return the number in a small amber ring, for the numbered sections of the control column
+     * Makes the number of a step.
+     * @param (int) number Step number.
+     * @return (Icon) The number in a small amber ring, for the numbered sections of the control
+     *                column.
      */
     public static Icon step(int number)
     {
         return new StepIcon(number);
     }
 
+    // ==========================================
+    //             LOW-LEVEL HELPERS
+    // ==========================================
+
     /**
-     * @param (Component) c the component being painted, usually a button
-     * @return the colour its icon should have now: as its text
+     * Chooses an icon's colour from the component it is on, so it follows the button's state.
+     * @param (Component) c The component being painted, usually a button.
+     * @return (Color) The colour its icon should have now: as its text.
      */
     private static Color colourFor(Component c)
     {
@@ -99,8 +122,9 @@ public final class Icons
     }
 
     /**
-     * @param (Graphics) g graphics
-     * @return a copy with smooth edges
+     * Prepares a graphics copy for drawing an icon.
+     * @param (Graphics) g Graphics.
+     * @return (Graphics2D) A copy with smooth edges.
      */
     private static Graphics2D smooth(Graphics g)
     {
@@ -111,25 +135,39 @@ public final class Icons
         return g2;
     }
 
+    // ==========================================
+    //                 THE ICONS
+    // ==========================================
+
     /** A filled circle with i, !, or ?. */
     private static final class DialogIcon implements Icon, UIResource
     {
+        /** Which dialog. */
         private final int kind;
 
         /**
-         * @param (int) kind which dialog
+         * Creates a dialog icon.
+         * @param (int) kind Which dialog.
          */
         DialogIcon(int kind)
         {
             this.kind = kind;
         }
 
+        /**
+         * Draws the coloured circle with its sign: i (information), ! (warning, error) or ?
+         * (question).
+         * @param (Component) c The component it is on.
+         * @param (Graphics) g Graphics.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         */
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y)
         {
-            Graphics2D g2 = smooth(g);
-            Color colour = Theme.FOCUS;
-            String glyph = "i";
+            Graphics2D g2     = smooth(g);
+            Color      colour = Theme.FOCUS;
+            String     glyph  = "i";
             if (kind == WARNING)
             {
                 colour = Theme.WARNING;
@@ -150,18 +188,26 @@ public final class Icons
             g2.setColor(Theme.ON_PLANE);
             g2.setFont(Theme.semibold(18));
             FontMetrics fm = g2.getFontMetrics();
-            int tx = x + (DIALOG_SIZE - fm.stringWidth(glyph)) / 2;
-            int ty = y + (DIALOG_SIZE + fm.getAscent() - fm.getDescent()) / 2;
+            int         tx = x + (DIALOG_SIZE - fm.stringWidth(glyph)) / 2;
+            int         ty = y + (DIALOG_SIZE + fm.getAscent() - fm.getDescent()) / 2;
             g2.drawString(glyph, tx, ty);
             g2.dispose();
         }
 
+        /**
+         * Gives the width.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconWidth()
         {
             return DIALOG_SIZE;
         }
 
+        /**
+         * Gives the height.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconHeight()
         {
@@ -172,16 +218,25 @@ public final class Icons
     /** A chevron, left or right. */
     private static final class ArrowIcon implements Icon
     {
+        /** True points right. */
         private final boolean right;
 
         /**
-         * @param (boolean) right true points right
+         * Creates a chevron.
+         * @param (boolean) right True points right.
          */
         ArrowIcon(boolean right)
         {
             this.right = right;
         }
 
+        /**
+         * Draws the chevron in the colour of its button's text.
+         * @param (Component) c The button it is on.
+         * @param (Graphics) g Graphics.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         */
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y)
         {
@@ -189,7 +244,7 @@ public final class Icons
             g2.setColor(colourFor(c));
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             Path2D.Double p = new Path2D.Double();
-            double s = ARROW_SIZE;
+            double        s = ARROW_SIZE;
             if (right)
             {
                 p.moveTo(x + s * 0.38, y + s * 0.2);
@@ -206,12 +261,20 @@ public final class Icons
             g2.dispose();
         }
 
+        /**
+         * Gives the width.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconWidth()
         {
             return ARROW_SIZE;
         }
 
+        /**
+         * Gives the height.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconHeight()
         {
@@ -222,16 +285,25 @@ public final class Icons
     /** Play (a triangle) or stop (a square). */
     private static final class PlayIcon implements Icon
     {
+        /** True draws the stop square. */
         private final boolean playing;
 
         /**
-         * @param (boolean) playing true draws the stop square
+         * Creates the Play / Stop icon.
+         * @param (boolean) playing True draws the stop square.
          */
         PlayIcon(boolean playing)
         {
             this.playing = playing;
         }
 
+        /**
+         * Draws the play triangle or the stop square in the colour of its button's text.
+         * @param (Component) c The button it is on.
+         * @param (Graphics) g Graphics.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         */
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y)
         {
@@ -254,12 +326,20 @@ public final class Icons
             g2.dispose();
         }
 
+        /**
+         * Gives the width.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconWidth()
         {
             return PLAY_SIZE;
         }
 
+        /**
+         * Gives the height.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconHeight()
         {
@@ -270,17 +350,24 @@ public final class Icons
     /** The plane's triangle, outlined in amber, with its three points. */
     private static final class MarkIcon implements Icon
     {
+        /**
+         * Draws the triangle, see-through amber with an amber outline and a dot on each point.
+         * @param (Component) c The component it is on.
+         * @param (Graphics) g Graphics.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         */
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y)
         {
-            Graphics2D g2 = smooth(g);
-            double s = MARK_SIZE;
-            double ax = x + s / 2;
-            double ay = y + 2;
-            double bx = x + 2;
-            double by = y + s - 3;
-            double cx = x + s - 2;
-            Path2D.Double p = new Path2D.Double();
+            Graphics2D    g2 = smooth(g);
+            double        s  = MARK_SIZE;
+            double        ax = x + s / 2;
+            double        ay = y + 2;
+            double        bx = x + 2;
+            double        by = y + s - 3;
+            double        cx = x + s - 2;
+            Path2D.Double p  = new Path2D.Double();
             p.moveTo(ax, ay);
             p.lineTo(bx, by);
             p.lineTo(cx, by);
@@ -291,18 +378,26 @@ public final class Icons
             g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.draw(p);
             double r = 2.2;
-            g2.fill(new java.awt.geom.Ellipse2D.Double(ax - r, ay - r, 2 * r, 2 * r));
-            g2.fill(new java.awt.geom.Ellipse2D.Double(bx - r, by - r, 2 * r, 2 * r));
-            g2.fill(new java.awt.geom.Ellipse2D.Double(cx - r, by - r, 2 * r, 2 * r));
+            g2.fill(new Ellipse2D.Double(ax - r, ay - r, 2 * r, 2 * r));
+            g2.fill(new Ellipse2D.Double(bx - r, by - r, 2 * r, 2 * r));
+            g2.fill(new Ellipse2D.Double(cx - r, by - r, 2 * r, 2 * r));
             g2.dispose();
         }
 
+        /**
+         * Gives the width.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconWidth()
         {
             return MARK_SIZE;
         }
 
+        /**
+         * Gives the height.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconHeight()
         {
@@ -313,16 +408,25 @@ public final class Icons
     /** A step number in an amber ring. */
     private static final class StepIcon implements Icon
     {
+        /** The number, as text. */
         private final String number;
 
         /**
-         * @param (int) number the step
+         * Creates a step number.
+         * @param (int) number The step.
          */
         StepIcon(int number)
         {
             this.number = Integer.toString(number);
         }
 
+        /**
+         * Draws the ring and the number centred in it.
+         * @param (Component) c The component it is on.
+         * @param (Graphics) g Graphics.
+         * @param (int) x Left.
+         * @param (int) y Top.
+         */
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y)
         {
@@ -334,18 +438,26 @@ public final class Icons
             g2.drawOval(x, y, STEP_SIZE - 1, STEP_SIZE - 1);
             g2.setFont(Theme.semibold(12));
             FontMetrics fm = g2.getFontMetrics();
-            int tx = x + (STEP_SIZE - fm.stringWidth(number)) / 2;
-            int ty = y + (STEP_SIZE + fm.getAscent() - fm.getDescent()) / 2 - 1;
+            int         tx = x + (STEP_SIZE - fm.stringWidth(number)) / 2;
+            int         ty = y + (STEP_SIZE + fm.getAscent() - fm.getDescent()) / 2 - 1;
             g2.drawString(number, tx, ty);
             g2.dispose();
         }
 
+        /**
+         * Gives the width.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconWidth()
         {
             return STEP_SIZE;
         }
 
+        /**
+         * Gives the height.
+         * @return (int) Pixels.
+         */
         @Override
         public int getIconHeight()
         {

@@ -14,16 +14,27 @@ import java.util.Locale;
  */
 final class FpsMeter
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
     /** How many recent frames the median is taken over. */
     static final int SAMPLES = 15;
+
+    /** Nanoseconds per second. */
     private static final double NANOS_PER_SECOND = 1e9;
+
     /** Above this the number is no longer a measurement but the timer's resolution. */
     private static final double MAX_FPS = 990000;
-    private static final int SIGNIFICANT = 1000;
-    private static final double SMALL = 10;
 
+    /** Three significant digits: rounded until under SIGNIFICANT units; under SMALL one decimal. */
+    private static final int    SIGNIFICANT = 1000;
+    private static final double SMALL       = 10;
+
+    /** The last SAMPLES projection times (the oldest is overwritten), and how many were added. */
     private final long[] recent = new long[SAMPLES];
-    private int count;
+    private int          count;
 
     /** Forgets the frames measured so far. */
     void reset()
@@ -32,7 +43,8 @@ final class FpsMeter
     }
 
     /**
-     * @param (long) nanos time of one frame's projection in nanoseconds
+     * Records one frame's projection time; the oldest of the last samples drops out.
+     * @param (long) nanos Time of one frame's projection in nanoseconds.
      */
     void add(long nanos)
     {
@@ -41,7 +53,8 @@ final class FpsMeter
     }
 
     /**
-     * @return true once a frame has been measured
+     * Tells whether there is anything to show yet.
+     * @return (boolean) True once a frame has been measured.
      */
     boolean hasValue()
     {
@@ -49,7 +62,9 @@ final class FpsMeter
     }
 
     /**
-     * @return frames per second: one second over the median of the recent frame times (0 if none)
+     * Computes the FPS of the recent frames.
+     * @return (double) Frames per second: one second over the median of the recent frame times (0
+     *                  if none).
      */
     double fps()
     {
@@ -57,19 +72,18 @@ final class FpsMeter
         {
             return 0;
         }
-        int n = Math.min(count, SAMPLES);
+        int    n      = Math.min(count, SAMPLES);
         long[] sorted = Arrays.copyOf(recent, n);
         Arrays.sort(sorted);
         return Math.min(MAX_FPS, NANOS_PER_SECOND / sorted[n / 2]);
     }
 
     /**
-     * The same measure over a whole run, e.g. every frame of an export: the median, not the mean,
-     * so a few slow frames (the first ones, garbage collection) do not halve it.
-     *
-     * @param (long[]) nanos frame times in nanoseconds (not changed)
-     * @param (int) count how many of them are filled
-     * @return frames per second, 0 if none
+     * Computes the same measure over a whole run, e.g. every frame of an export: the median, not
+     * the mean, so a few slow frames (the first ones, garbage collection) do not halve it.
+     * @param (long[]) nanos Frame times in nanoseconds (not changed).
+     * @param (int) count How many of them are filled.
+     * @return (double) Frames per second, 0 if none.
      */
     static double fpsOf(long[] nanos, int count)
     {
@@ -83,7 +97,8 @@ final class FpsMeter
     }
 
     /**
-     * @return the current value as shown, e.g. "2,110 FPS"
+     * Formats the current FPS for the screen and the video.
+     * @return (String) The current value as shown, e.g. "2,110 FPS".
      */
     String text()
     {
@@ -91,8 +106,11 @@ final class FpsMeter
     }
 
     /**
-     * @param (double) fps frames per second
-     * @return "24,800 FPS", "512 FPS", "4.2 FPS": three significant digits, thousands grouped
+     * Formats an FPS value to three significant digits, so the label stays readable while it
+     * changes.
+     * @param (double) fps Frames per second.
+     * @return (String) "24,800 FPS", "512 FPS", "4.2 FPS": three significant digits, thousands
+     *                  grouped.
      */
     static String format(double fps)
     {
@@ -101,7 +119,7 @@ final class FpsMeter
             return String.format(Locale.ROOT, "%.1f FPS", fps);
         }
         long value = Math.round(fps);
-        long unit = 1;
+        long unit  = 1;
         while (value / unit >= SIGNIFICANT)
         {
             unit *= 10;

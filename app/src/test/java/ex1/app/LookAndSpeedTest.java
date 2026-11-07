@@ -34,6 +34,11 @@ import org.junit.Test;
  */
 public class LookAndSpeedTest
 {
+    /**
+     * Checks that the theme gives buttons, switches, fields, scroll bars and sliders their flat
+     * look, and that a primary button really paints amber (TC-122).
+     * @throws (Exception) When the look cannot be installed or put back.
+     */
     @Test
     public void theThemeGivesEveryControlItsFlatLook() throws Exception
     {
@@ -41,11 +46,11 @@ public class LookAndSpeedTest
         try
         {
             Theme.install();
-            JButton b = new JButton("Play");
-            JToggleButton t = new JToggleButton("3 points");
-            JTextField f = new JTextField(5);
-            JScrollBar s = new JScrollBar();
-            JSlider sl = new JSlider();
+            JButton       b  = new JButton("Play");
+            JToggleButton t  = new JToggleButton("3 points");
+            JTextField    f  = new JTextField(5);
+            JScrollBar    s  = new JScrollBar();
+            JSlider       sl = new JSlider();
             assertEquals(FlatButtonUI.class, b.getUI().getClass());
             assertEquals(FlatButtonUI.class, t.getUI().getClass());
             assertEquals(FlatTextFieldUI.class, f.getUI().getClass());
@@ -54,7 +59,7 @@ public class LookAndSpeedTest
             b.putClientProperty(Theme.VARIANT, Theme.PRIMARY);
             t.putClientProperty(Theme.VARIANT, Theme.SEGMENT_FIRST);
             BufferedImage img = new BufferedImage(200, 40, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g = img.createGraphics();
+            Graphics2D    g   = img.createGraphics();
             b.setSize(b.getPreferredSize());
             b.paint(g);
             g.dispose();
@@ -62,7 +67,7 @@ public class LookAndSpeedTest
             int rgb = img.getRGB(b.getWidth() / 2, 2) & 0xFFFFFF;
             assertEquals(Theme.PLANE.getRGB() & 0xFFFFFF, rgb);
             BufferedImage other = new BufferedImage(200, 40, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g2 = other.createGraphics();
+            Graphics2D    g2    = other.createGraphics();
             t.setSize(t.getPreferredSize());
             t.setSelected(true);
             t.paint(g2);
@@ -76,6 +81,11 @@ public class LookAndSpeedTest
         }
     }
 
+    /**
+     * Checks that the 3-D view draws its frames on its own thread, and that after dispose its timer
+     * asks for nothing more (TC-123).
+     * @throws (Exception) When the wait for the frame thread is interrupted.
+     */
     @Test
     public void theThreeDViewDrawsOnItsOwnThread() throws Exception
     {

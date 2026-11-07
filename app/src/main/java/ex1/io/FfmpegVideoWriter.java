@@ -18,22 +18,28 @@ import java.util.List;
  */
 public final class FfmpegVideoWriter implements VideoWriter
 {
+
+    // ==========================================
+    //             CONSTANTS & FIELDS
+    // ==========================================
+
+    /** x264 quality: 18 looks the same as the frames to the eye, at a fraction of the size. */
     private static final String CRF = "18";
 
-    private final File output;
-    private final int frameBytes;
-    private final Process process;
+    /** The video, the size of one frame, and the ffmpeg process with its input and log. */
+    private final File         output;
+    private final int          frameBytes;
+    private final Process      process;
     private final OutputStream stdin;
-    private final File log;
+    private final File         log;
 
     /**
      * Starts ffmpeg.
-     *
-     * @param (File) output destination .mp4
-     * @param (int) width frame width (must be even for yuv420p)
-     * @param (int) height frame height (must be even for yuv420p)
-     * @param (int) fps frames per second of the video
-     * @throws (IOException) if ffmpeg cannot be started
+     * @param (File) output Destination .mp4.
+     * @param (int) width Frame width (must be even for yuv420p).
+     * @param (int) height Frame height (must be even for yuv420p).
+     * @param (int) fps Frames per second of the video.
+     * @throws (IOException) If ffmpeg cannot be started.
      */
     public FfmpegVideoWriter(File output, int width, int height, int fps) throws IOException
     {
@@ -90,6 +96,11 @@ public final class FfmpegVideoWriter implements VideoWriter
         this.stdin = new BufferedOutputStream(process.getOutputStream(), 1 << 20);
     }
 
+    /**
+     * Pipes the frame into ffmpeg.
+     * @param (byte[]) grey Width*height grey levels, row-major.
+     * @throws (IOException) When ffmpeg stopped reading (the message carries the end of its log).
+     */
     @Override
     public void writeFrame(byte[] grey) throws IOException
     {
@@ -107,6 +118,10 @@ public final class FfmpegVideoWriter implements VideoWriter
         }
     }
 
+    /**
+     * Ends the input and waits for ffmpeg to finish the file.
+     * @throws (IOException) When ffmpeg failed (its exit code and log) or the wait was interrupted.
+     */
     @Override
     public void close() throws IOException
     {
@@ -136,7 +151,8 @@ public final class FfmpegVideoWriter implements VideoWriter
     }
 
     /**
-     * @return ffmpeg's error output, trimmed
+     * Reads what ffmpeg wrote to its log, for the error message.
+     * @return (String) The error output of ffmpeg, trimmed.
      */
     private String readLog()
     {

@@ -1,5 +1,7 @@
 package ex1.core;
 
+import java.util.Arrays;
+
 /**
  * Projects a volume onto a plane (docs/ALGORITHM.md §3).
  *
@@ -18,8 +20,9 @@ public abstract class Projector
     }
 
     /**
-     * @param (Interpolation) mode sampling mode
-     * @return single-threaded projector for that mode
+     * Makes a projector for a sampling mode.
+     * @param (Interpolation) mode Sampling mode.
+     * @return (Projector) Single-threaded projector for that mode.
      */
     public static Projector create(Interpolation mode)
     {
@@ -31,9 +34,10 @@ public abstract class Projector
     }
 
     /**
-     * @param (Interpolation) mode sampling mode
-     * @param (int) threads worker threads; 1 = run on the calling thread
-     * @return projector, wrapped in a {@link ParallelProjector} when threads &gt; 1
+     * Makes a projector for a sampling mode on a number of threads.
+     * @param (Interpolation) mode Sampling mode.
+     * @param (int) threads Worker threads; 1 = run on the calling thread.
+     * @return (Projector) Projector, wrapped in a {@link ParallelProjector} when threads &gt; 1.
      */
     public static Projector create(Interpolation mode, int threads)
     {
@@ -47,10 +51,9 @@ public abstract class Projector
 
     /**
      * Projects into a newly allocated image of size plane.imageWidth() x plane.imageHeight().
-     *
-     * @param (Volume) volume source volume
-     * @param (Plane) plane plane to sample (should be valid, see Plane.validate)
-     * @return projected image
+     * @param (Volume) volume Source volume.
+     * @param (Plane) plane Plane to sample (should be valid, see Plane.validate).
+     * @return (Image2D) Projected image.
      */
     public Image2D project(Volume volume, Plane plane)
     {
@@ -63,10 +66,9 @@ public abstract class Projector
      * Projects into an existing image, so a frame loop can reuse one buffer (no garbage per frame).
      * The image must be at least plane.imageWidth() x plane.imageHeight(); the plane is drawn in
      * its top-left corner region and everything else is cleared to 0.
-     *
-     * @param (Volume) volume source volume
-     * @param (Plane) plane plane to sample
-     * @param (Image2D) image destination
+     * @param (Volume) volume Source volume.
+     * @param (Plane) plane Plane to sample.
+     * @param (Image2D) image Destination.
      */
     public void project(Volume volume, Plane plane, Image2D image)
     {
@@ -77,7 +79,7 @@ public abstract class Projector
             throw new IllegalArgumentException("image " + image.width() + "x" + image.height()
                     + " is smaller than plane " + w + "x" + h);
         }
-        java.util.Arrays.fill(image.pixels(), 0f);
+        Arrays.fill(image.pixels(), 0f);
         projectRows(volume, plane, image, 0, h);
     }
 
@@ -85,21 +87,20 @@ public abstract class Projector
      * Projects rows [fromRow, toRow) of the plane into the image. Rows are independent, so a
      * parallel projector can call this for different row ranges on different threads; the image
      * must already be cleared and large enough (see project()).
-     *
-     * @param (Volume) volume source volume
-     * @param (Plane) plane plane to sample
-     * @param (Image2D) image destination (not cleared here)
-     * @param (int) fromRow first row, inclusive
-     * @param (int) toRow last row, exclusive (at most plane.imageHeight())
+     * @param (Volume) volume Source volume.
+     * @param (Plane) plane Plane to sample.
+     * @param (Image2D) image Destination (not cleared here).
+     * @param (int) fromRow First row, inclusive.
+     * @param (int) toRow Last row, exclusive (at most plane.imageHeight()).
      */
     public void projectRows(Volume volume, Plane plane, Image2D image, int fromRow, int toRow)
     {
-        int w = plane.imageWidth();
+        int     w   = plane.imageWidth();
         float[] out = image.pixels();
-        Vec3 a1 = plane.a1();
-        Vec3 a2 = plane.a2();
-        Vec3 v1 = plane.b().sub(a1).normalized();
-        Vec3 v2 = plane.c().sub(a2).normalized();
+        Vec3    a1  = plane.a1();
+        Vec3    a2  = plane.a2();
+        Vec3    v1  = plane.b().sub(a1).normalized();
+        Vec3    v2  = plane.c().sub(a2).normalized();
 
         for (int y = fromRow; y < toRow; y++)
         {
@@ -114,7 +115,7 @@ public abstract class Projector
             double ex = rx - lx;
             double ey = ry - ly;
             double ez = rz - lz;
-            double d = Math.sqrt(ex * ex + ey * ey + ez * ez);
+            double d  = Math.sqrt(ex * ex + ey * ey + ez * ez);
 
             int n = (int) Math.floor(d) + 1;
             if (n > w)
@@ -130,7 +131,7 @@ public abstract class Projector
                 dy = ey / d;
                 dz = ez / d;
             }
-            int x0 = (w - n) / 2;
+            int x0     = (w - n) / 2;
             int offset = x0 + y * image.width();
             sampleRow(volume, lx, ly, lz, dx, dy, dz, n, out, offset);
         }
@@ -139,17 +140,16 @@ public abstract class Projector
     /**
      * Samples n points p_i = start + i * step and writes them to out[offset .. offset + n).
      * Points outside the volume must produce 0.
-     *
-     * @param (Volume) volume source volume
-     * @param (double) px start x
-     * @param (double) py start y
-     * @param (double) pz start z
-     * @param (double) dx step x
-     * @param (double) dy step y
-     * @param (double) dz step z
-     * @param (int) n number of samples
-     * @param (float[]) out destination pixels
-     * @param (int) offset index of the first destination pixel
+     * @param (Volume) volume Source volume.
+     * @param (double) px Start x.
+     * @param (double) py Start y.
+     * @param (double) pz Start z.
+     * @param (double) dx Step x.
+     * @param (double) dy Step y.
+     * @param (double) dz Step z.
+     * @param (int) n Number of samples.
+     * @param (float[]) out Destination pixels.
+     * @param (int) offset Index of the first destination pixel.
      */
     protected abstract void sampleRow(Volume volume, double px, double py, double pz,
                                       double dx, double dy, double dz,
