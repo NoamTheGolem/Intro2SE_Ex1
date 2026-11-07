@@ -275,6 +275,8 @@ final class OrthoView extends JComponent
         {
             setCursor(Cursor.getDefaultCursor());
         }
+        // The hint at the bottom comes and goes with picking: draw the view again now.
+        repaint();
     }
 
     // ==========================================

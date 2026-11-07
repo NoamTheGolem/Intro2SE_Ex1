@@ -140,6 +140,9 @@ final class VolumeView3D extends JComponent
     private transient Job          shownJob;
     private transient Raster       spare;
 
+    /** Frame thread only: the job that failed and is being drawn once more (never a third time). */
+    private transient Job retried;
+
     /** Everything one frame needs, copied on the Swing thread when the frame is asked for. */
     private static final class Job
     {
@@ -562,7 +565,20 @@ final class VolumeView3D extends JComponent
             }
             catch (RuntimeException e)
             {
-                // One frame that failed is skipped; the next change asks for a new one.
+                // A failed frame would leave the old one on show until the next change (a click,
+                // a turn): draw it once more, unless a newer request is waiting anyway.
+                System.err.println("3-D view: a frame failed: " + e);
+                if (job != retried)
+                {
+                    synchronized (lock)
+                    {
+                        if (pending == null)
+                        {
+                            pending = job;
+                            retried = job;
+                        }
+                    }
+                }
                 continue;
             }
             synchronized (lock)
