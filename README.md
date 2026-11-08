@@ -13,7 +13,7 @@ command-line demo the assignment asks for (`python Ex0.py file.nrrd file.csv fil
 where the lecturer's CSV use cases go.
 
 **Course:** Introduction to Software Engineering (OOP/OOD), Ariel University — Exercise 1
-**Team:** *<name 1 — ID>*, *<name 2 — ID>*
+**Team:** 214793739, 214790719
 **Status:** complete; runs on Windows straight after download (Java included); 108 automated tests incl. the lecturer's own edge cases; CI on Linux and Windows (JDK 17 and 21)
 
 ![The app: three points picked on the sagittal view (top of the head, jaw, back of the neck); the
